@@ -1,0 +1,125 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<Form xmlns="http://v8.1c.ru/8.3/xcf/logform" xmlns:app="http://v8.1c.ru/8.2/managed-application/core" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" xmlns:dcscor="http://v8.1c.ru/8.1/data-composition-system/core" xmlns:dcssch="http://v8.1c.ru/8.1/data-composition-system/schema" xmlns:dcsset="http://v8.1c.ru/8.1/data-composition-system/settings" xmlns:ent="http://v8.1c.ru/8.1/data/enterprise" xmlns:lf="http://v8.1c.ru/8.2/managed-application/logform" xmlns:pal="http://v8.1c.ru/8.1/data/ui/colors/palette" xmlns:style="http://v8.1c.ru/8.1/data/ui/style" xmlns:sys="http://v8.1c.ru/8.1/data/ui/fonts/system" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:v8ui="http://v8.1c.ru/8.1/data/ui" xmlns:web="http://v8.1c.ru/8.1/data/ui/colors/web" xmlns:win="http://v8.1c.ru/8.1/data/ui/colors/windows" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="2.21">
+	<WindowOpeningMode>LockOwner</WindowOpeningMode>
+	<UseForFoldersAndItems>Folders</UseForFoldersAndItems>
+	<AutoCommandBar name="ФормаКоманднаяПанель" id="-1"/>
+	<ChildItems>
+		<InputField name="Код" id="1">
+			<DataPath>Объект.Code</DataPath>
+			<EditMode>EnterOnInput</EditMode>
+			<ExtendedEditMultipleValues>true</ExtendedEditMultipleValues>
+			<ContextMenu name="КодКонтекстноеМеню" id="2"/>
+			<ExtendedTooltip name="КодРасширеннаяПодсказка" id="3"/>
+		</InputField>
+		<InputField name="Организация" id="71">
+			<DataPath>Объект.Организация</DataPath>
+			<ExtendedEditMultipleValues>true</ExtendedEditMultipleValues>
+			<ContextMenu name="ОрганизацияКонтекстноеМеню" id="72"/>
+			<ExtendedTooltip name="ОрганизацияРасширеннаяПодсказка" id="73"/>
+		</InputField>
+		<InputField name="Наименование" id="5">
+			<DataPath>Объект.Description</DataPath>
+			<EditMode>EnterOnInput</EditMode>
+			<ExtendedEditMultipleValues>true</ExtendedEditMultipleValues>
+			<ContextMenu name="НаименованиеКонтекстноеМеню" id="6"/>
+			<ExtendedTooltip name="НаименованиеРасширеннаяПодсказка" id="7"/>
+		</InputField>
+		<InputField name="Родитель" id="9">
+			<DataPath>Объект.Parent</DataPath>
+			<EditMode>EnterOnInput</EditMode>
+			<ExtendedEditMultipleValues>true</ExtendedEditMultipleValues>
+			<ContextMenu name="РодительКонтекстноеМеню" id="10"/>
+			<ExtendedTooltip name="РодительРасширеннаяПодсказка" id="11"/>
+		</InputField>
+		<InputField name="Цена" id="13">
+			<DataPath>Объект.Цена</DataPath>
+			<Visible>false</Visible>
+			<EditMode>EnterOnInput</EditMode>
+			<ExtendedEditMultipleValues>true</ExtendedEditMultipleValues>
+			<ContextMenu name="ЦенаКонтекстноеМеню" id="14"/>
+			<ExtendedTooltip name="ЦенаРасширеннаяПодсказка" id="15"/>
+		</InputField>
+		<InputField name="Описание" id="17">
+			<DataPath>Объект.Описание</DataPath>
+			<EditMode>EnterOnInput</EditMode>
+			<ExtendedEditMultipleValues>true</ExtendedEditMultipleValues>
+			<ContextMenu name="ОписаниеКонтекстноеМеню" id="18"/>
+			<ExtendedTooltip name="ОписаниеРасширеннаяПодсказка" id="19"/>
+		</InputField>
+		<InputField name="ИдентификаторСервера" id="21">
+			<DataPath>Объект.ИдентификаторСервера</DataPath>
+			<EditMode>EnterOnInput</EditMode>
+			<ExtendedEditMultipleValues>true</ExtendedEditMultipleValues>
+			<ContextMenu name="ИдентификаторСервераКонтекстноеМеню" id="22"/>
+			<ExtendedTooltip name="ИдентификаторСервераРасширеннаяПодсказка" id="23"/>
+		</InputField>
+		<Table name="Порции" id="25">
+			<Representation>List</Representation>
+			<Visible>false</Visible>
+			<AutoInsertNewRow>true</AutoInsertNewRow>
+			<EnableStartDrag>true</EnableStartDrag>
+			<EnableDrag>true</EnableDrag>
+			<DataPath>Объект.Порции</DataPath>
+			<ShowCommandBar>auto</ShowCommandBar>
+			<RowFilter xsi:nil="true"/>
+			<ContextMenu name="ПорцииКонтекстноеМеню" id="26"/>
+			<AutoCommandBar name="ПорцииКоманднаяПанель" id="27"/>
+			<ExtendedTooltip name="ПорцииРасширеннаяПодсказка" id="28"/>
+			<SearchStringAddition name="ПорцииСтрокаПоиска" id="29">
+				<AdditionSource>
+					<Item>Порции</Item>
+					<Type>SearchStringRepresentation</Type>
+				</AdditionSource>
+				<ContextMenu name="ПорцииСтрокаПоискаКонтекстноеМеню" id="30"/>
+				<ExtendedTooltip name="ПорцииСтрокаПоискаРасширеннаяПодсказка" id="31"/>
+			</SearchStringAddition>
+			<ViewStatusAddition name="ПорцииСостояниеПросмотра" id="32">
+				<AdditionSource>
+					<Item>Порции</Item>
+					<Type>ViewStatusRepresentation</Type>
+				</AdditionSource>
+				<ContextMenu name="ПорцииСостояниеПросмотраКонтекстноеМеню" id="33"/>
+				<ExtendedTooltip name="ПорцииСостояниеПросмотраРасширеннаяПодсказка" id="34"/>
+			</ViewStatusAddition>
+			<SearchControlAddition name="ПорцииУправлениеПоиском" id="35">
+				<AdditionSource>
+					<Item>Порции</Item>
+					<Type>SearchControl</Type>
+				</AdditionSource>
+				<ContextMenu name="ПорцииУправлениеПоискомКонтекстноеМеню" id="36"/>
+				<ExtendedTooltip name="ПорцииУправлениеПоискомРасширеннаяПодсказка" id="37"/>
+			</SearchControlAddition>
+			<ChildItems>
+				<LabelField name="ПорцииНомерСтроки" id="46">
+					<DataPath>Объект.Порции.LineNumber</DataPath>
+					<EditMode>EnterOnInput</EditMode>
+					<ContextMenu name="ПорцииНомерСтрокиКонтекстноеМеню" id="47"/>
+					<ExtendedTooltip name="ПорцииНомерСтрокиРасширеннаяПодсказка" id="48"/>
+				</LabelField>
+				<InputField name="ПорцииНаименование" id="50">
+					<DataPath>Объект.Порции.Наименование</DataPath>
+					<EditMode>EnterOnInput</EditMode>
+					<ExtendedEditMultipleValues>true</ExtendedEditMultipleValues>
+					<ContextMenu name="ПорцииНаименованиеКонтекстноеМеню" id="51"/>
+					<ExtendedTooltip name="ПорцииНаименованиеРасширеннаяПодсказка" id="52"/>
+				</InputField>
+				<InputField name="ПорцииЦена" id="54">
+					<DataPath>Объект.Порции.Цена</DataPath>
+					<EditMode>EnterOnInput</EditMode>
+					<ExtendedEditMultipleValues>true</ExtendedEditMultipleValues>
+					<ContextMenu name="ПорцииЦенаКонтекстноеМеню" id="55"/>
+					<ExtendedTooltip name="ПорцииЦенаРасширеннаяПодсказка" id="56"/>
+				</InputField>
+			</ChildItems>
+		</Table>
+	</ChildItems>
+	<Attributes>
+		<Attribute name="Объект" id="1">
+			<Type>
+				<v8:Type>cfg:CatalogObject.Номенклатура</v8:Type>
+			</Type>
+			<MainAttribute>true</MainAttribute>
+			<SavedData>true</SavedData>
+		</Attribute>
+	</Attributes>
+</Form>

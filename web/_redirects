@@ -1,0 +1,3 @@
+# Все пути отдавать index.html — аналог rewrites из firebase.json.
+# Без этого Netlify вернёт 404 на любом адресе, кроме корневого.
+/*    /index.html   200

@@ -1,0 +1,49 @@
+{
+  "project_info": {
+    "project_number": "639131292466",
+    "firebase_url": "https://andalus-menu-63f23-default-rtdb.firebaseio.com",
+    "project_id": "andalus-menu-63f23",
+    "storage_bucket": "andalus-menu-63f23.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:639131292466:android:470bdbd4cdbdb1e3db7d2b",
+        "android_client_info": {
+          "package_name": "com.example.cafe_andalus_menu"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC1jWGl39cW_z1v8994_p6I22Lu3IAW6pM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:639131292466:android:bea602db7cba3180db7d2b",
+        "android_client_info": {
+          "package_name": "com.twins.cashbox_v1"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC1jWGl39cW_z1v8994_p6I22Lu3IAW6pM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

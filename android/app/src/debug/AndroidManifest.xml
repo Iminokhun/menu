@@ -1,0 +1,7 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- INTERNET нужен Flutter-тулингу для hot reload и отладчика.
+         Активити и остальное объявлены в src/main; раньше здесь лежала
+         полная копия манифеста с category.HOME, из-за чего киоск-режим
+         протекал во ВСЕ debug-сборки, включая телефонную. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+</manifest>
