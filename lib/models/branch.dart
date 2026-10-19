@@ -1,3 +1,4 @@
+import '../l10n/languages.dart';
 import 'json_read.dart';
 
 /// Филиал — отдельное заведение со своим меню.
@@ -24,6 +25,11 @@ class Branch {
   /// Оформление меню, которое задало кафе в админке
   final BranchStyle style;
 
+  /// Языки меню, первый — основной: на нём названия блюд в `name`.
+  final List<String> languages;
+
+  String get mainLanguage => languages.first;
+
   const Branch({
     required this.id,
     required this.slug,
@@ -34,6 +40,7 @@ class Branch {
     this.qrUrl = '',
     this.sortOrder = 0,
     this.style = const BranchStyle(),
+    this.languages = const ['ru'],
   });
 
   /// Подстановки на случай пустых полей живут здесь, а не на экране:
@@ -51,7 +58,15 @@ class Branch {
       qrUrl: (json['qr_url'] as String?) ?? '',
       sortOrder: jsonInt(json['sort_order']),
       style: BranchStyle.fromJson(json),
+      languages: _languages(json['languages']),
     );
+  }
+
+  /// Языки, которые это приложение знает. Пустой список (старый сервер,
+  /// старая копия меню) — русский: на нём меню было всегда.
+  static List<String> _languages(Object? v) {
+    final known = jsonStrings(v).where((c) => menuLanguage(c) != null).toList();
+    return known.isEmpty ? const ['ru'] : known;
   }
 }
 

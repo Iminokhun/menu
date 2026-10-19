@@ -16,12 +16,12 @@ class Portion {
 class Product {
   final String id;
   final String parentId;
+  /// Название и описание на основном языке филиала.
   final String name;
-  final String nameEn;
-  final String nameTr;
   final String description;
-  final String descEn;
-  final String descTr;
+
+  /// Переводы на другие языки филиала: `{"en": {"name": …, "description": …}}`.
+  final Map<String, Map<String, String>> i18n;
   final double price;
   final String imageUrl;
 
@@ -35,11 +35,8 @@ class Product {
     required this.id,
     required this.parentId,
     required this.name,
-    this.nameEn = '',
-    this.nameTr = '',
     this.description = '',
-    this.descEn = '',
-    this.descTr = '',
+    this.i18n = const {},
     this.price = 0,
     this.imageUrl = '',
     this.modelUrl = '',
@@ -53,8 +50,7 @@ class Product {
         id: json['id'] as String,
         parentId: jsonStr(json['parent_id']),
         name: jsonStr(json['name']),
-        nameEn: jsonStr(json['name_en']),
-        nameTr: jsonStr(json['name_tr']),
+        i18n: i18nFromJson(json['i18n']),
         imageUrl: jsonStr(json['image_url']),
         isGroup: true,
         sortOrder: jsonInt(json['sort_order']),
@@ -68,11 +64,8 @@ class Product {
       id: json['id'] as String,
       parentId: jsonStr(json['category_id']),
       name: jsonStr(json['name']),
-      nameEn: jsonStr(json['name_en']),
-      nameTr: jsonStr(json['name_tr']),
       description: jsonStr(json['description']),
-      descEn: jsonStr(json['desc_en']),
-      descTr: jsonStr(json['desc_tr']),
+      i18n: i18nFromJson(json['i18n']),
       price: jsonDouble(json['price']),
       imageUrl: jsonStr(json['image_url']),
       modelUrl: jsonStr(json['model_url']),
@@ -86,19 +79,17 @@ class Product {
     );
   }
 
-  /// Локализованное название товара/категории
-  String localizedName(String langCode) {
-    if (langCode == 'en' && nameEn.isNotEmpty) return nameEn;
-    if (langCode == 'tr' && nameTr.isNotEmpty) return nameTr;
-    return name;
-  }
+  /// Название на языке [langCode]; нет перевода — на основном языке.
+  String localizedName(String langCode) => i18n[langCode]?['name'] ?? name;
 
-  /// Локализованное описание
-  String localizedDesc(String langCode) {
-    if (langCode == 'en' && descEn.isNotEmpty) return descEn;
-    if (langCode == 'tr' && descTr.isNotEmpty) return descTr;
-    return description;
-  }
+  /// Описание на языке [langCode]; нет перевода — на основном языке.
+  String localizedDesc(String langCode) =>
+      i18n[langCode]?['description'] ?? description;
+
+  /// Все тексты на всех языках — для поиска.
+  Iterable<String> get allNames => [name, for (final t in i18n.values) ?t['name']];
+  Iterable<String> get allDescriptions =>
+      [description, for (final t in i18n.values) ?t['description']];
 }
 
 class CartItem {

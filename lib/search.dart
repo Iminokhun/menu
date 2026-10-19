@@ -19,7 +19,7 @@ List<Product> searchDishes(List<Product> items, String query) {
     var id = dish.parentId;
     for (var depth = 0; depth < 5 && groups.containsKey(id); depth++) {
       final g = groups[id]!;
-      parts.addAll([g.name, g.nameEn, g.nameTr]);
+      parts.addAll(g.allNames);
       id = g.parentId;
     }
     return parts.join(' ');
@@ -28,9 +28,9 @@ List<Product> searchDishes(List<Product> items, String query) {
   final scored = <(Product, int)>[];
   for (final dish in items) {
     if (dish.isGroup) continue;
-    final names = _searchable('${dish.name} ${dish.nameEn} ${dish.nameTr}');
+    final names = _searchable(dish.allNames.join(' '));
     final rest = _searchable(
-      '${dish.description} ${dish.descEn} ${dish.descTr} ${categoryText(dish)}',
+      '${dish.allDescriptions.join(' ')} ${categoryText(dish)}',
     );
     if (!words.every((w) => names.contains(w) || rest.contains(w))) continue;
 

@@ -4,6 +4,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../../api/api_client.dart';
 import '../../config/current_branch.dart';
 import '../../image_upload.dart';
+import '../../l10n/languages.dart';
 import '../../models/branch.dart';
 import '../../widgets/qr_sticker.dart';
 
@@ -27,6 +28,11 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
   /// Ссылка QR, которая сейчас записана у филиала
   String _savedQrUrl = '';
   String _logoUrl = '';
+
+  /// Языки меню, первый — основной. [_savedLanguages] — как записано на
+  /// сервере: по ним видно, что основной язык меняется.
+  List<String> _languages = const ['ru'];
+  List<String> _savedLanguages = const ['ru'];
   bool _loading = true;
   bool _saving = false;
 
@@ -104,6 +110,7 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
         _slugCtrl.text = (data['slug'] as String?) ?? '';
         _logoUrl = (data['logo_url'] as String?) ?? '';
         _savedQrUrl = (data['qr_url'] as String?) ?? '';
+        _languages = _savedLanguages = Branch.fromJson(data).languages;
         _siteBase = me.menuUrl.isEmpty ? null : me.menuUrl;
         _cafeName = me.cafeName;
         _branchCount = count;
@@ -138,9 +145,16 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
       return;
     }
 
+    final oldMain = _savedLanguages.first;
+    final newMain = _languages.first;
+    if (oldMain != newMain && !await _confirmMainLanguage(oldMain, newMain)) {
+      return;
+    }
+
     setState(() => _saving = true);
     try {
       final row = await api.patch('/api/admin/branches/${branch.id}', {
+        'languages': _languages,
         'slug': slug,
         'name': _nameCtrl.text.trim(),
         'slogan': _sloganCtrl.text.trim(),
@@ -157,6 +171,7 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
         // slug могли поменять — сохранённая на устройстве настройка
         // иначе указывала бы на филиал, которого больше нет.
         await saveBranchSlug(updated.slug);
+        _savedLanguages = updated.languages;
       }
 
       _toast('Настройки сохранены!');
@@ -164,6 +179,139 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
       _toast('Ошибка сохранения: $e', isError: true);
     }
     if (mounted) setState(() => _saving = false);
+  }
+
+  String _langName(String code) => menuLanguage(code)?.ruName ?? code;
+
+  /// Смена основного языка переставляет тексты всех блюд филиала, поэтому
+  /// — только после подтверждения.
+  Future<bool> _confirmMainLanguage(String oldMain, String newMain) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Сменить основной язык?', style: TextStyle(color: Colors.white)),
+        content: Text(
+          'Основным станет ${_langName(newMain).toLowerCase()}: его переводы '
+          'названий и описаний станут основными текстами, а '
+          '${_langName(oldMain).toLowerCase()} — переводом.\n\n'
+          'Где перевода на ${_langName(newMain).toLowerCase()} нет, пока '
+          'останется прежний текст — допишите его в категориях и товарах.',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: _accent, foregroundColor: Colors.black),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Сменить'),
+          ),
+        ],
+      ),
+    );
+    return ok == true;
+  }
+
+  Widget _languagesCard() {
+    final available = [
+      for (final l in menuLanguages)
+        if (!_languages.contains(l.code)) l,
+    ];
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final (i, code) in _languages.indexed)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text.rich(
+                      TextSpan(children: [
+                        TextSpan(
+                          text: _langName(code),
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                        ),
+                        TextSpan(
+                          text: '   ${menuLanguage(code)?.nativeName ?? ''}',
+                          style: const TextStyle(color: Colors.white38, fontSize: 12),
+                        ),
+                      ]),
+                    ),
+                  ),
+                  if (i == 0)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: _accent.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text('основной', style: TextStyle(color: _accent, fontSize: 12)),
+                    )
+                  else ...[
+                    TextButton(
+                      onPressed: () => setState(() => _languages = [
+                            code,
+                            ..._languages.where((c) => c != code),
+                          ]),
+                      child: const Text('сделать основным', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white38, size: 18),
+                      tooltip: 'Убрать язык',
+                      onPressed: () => setState(() => _languages = [
+                            for (final c in _languages)
+                              if (c != code) c,
+                          ]),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          const SizedBox(height: 8),
+          if (available.isNotEmpty)
+            PopupMenuButton<String>(
+              tooltip: '',
+              color: const Color(0xFF2A2A2A),
+              onSelected: (code) => setState(() => _languages = [..._languages, code]),
+              itemBuilder: (_) => [
+                for (final l in available)
+                  PopupMenuItem(
+                    value: l.code,
+                    child: Text('${l.ruName}   ${l.nativeName}', style: const TextStyle(color: Colors.white)),
+                  ),
+              ],
+              child: const Padding(
+                padding: EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.add, color: _accent, size: 18),
+                    SizedBox(width: 6),
+                    Text('Добавить язык', style: TextStyle(color: _accent)),
+                  ],
+                ),
+              ),
+            ),
+          const SizedBox(height: 8),
+          const Text(
+            'Гость видит меню на языке своего телефона, если он есть в списке, '
+            'иначе — на основном. Переводы названий и описаний вводятся в '
+            'категориях и товарах; где перевода нет, показывается основной текст. '
+            'Убранный язык не стирает переводы: вернёте язык — вернутся и они.',
+            style: TextStyle(color: Colors.white38, fontSize: 12, height: 1.4),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _addBranch() async {
@@ -829,6 +977,11 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
                           style: const TextStyle(color: Colors.orangeAccent, fontSize: 12),
                         ),
                       ],
+                      const SizedBox(height: 30),
+
+                      _sectionLabel('ЯЗЫКИ МЕНЮ'),
+                      const SizedBox(height: 12),
+                      _languagesCard(),
                       const SizedBox(height: 30),
 
                       _sectionLabel('ЛОГОТИП'),

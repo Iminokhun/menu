@@ -3,7 +3,9 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../api/api_client.dart';
 import '../../config/current_branch.dart';
 import '../../image_upload.dart';
+import '../../models/json_read.dart';
 import 'category_tree.dart';
+import 'translations.dart';
 
 class AdminCategoriesScreen extends StatefulWidget {
   const AdminCategoriesScreen({super.key});
@@ -91,9 +93,9 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
         .where((c) => !isSubcategory(c, _categories) && c['id'] != item?['id'])
         .toList();
     if (!parents.any((c) => c['id'] == parent)) parent = null;
-    final nameRu = TextEditingController(text: item?['name'] ?? '');
-    final nameEn = TextEditingController(text: item?['name_en'] ?? '');
-    final nameTr = TextEditingController(text: item?['name_tr'] ?? '');
+    final languages = currentBranch.value?.languages ?? const ['ru'];
+    final name = TextEditingController(text: item?['name'] ?? '');
+    final translations = Translations(item?['i18n'], languages, const ['name']);
     final sortOrder = TextEditingController(text: (item?['sort_order'] ?? 0).toString());
     String? imageUrl = item?['image_url'];
     bool uploading = false;
@@ -119,11 +121,11 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _field(nameRu, 'Название (RU) *'),
-                  const SizedBox(height: 12),
-                  _field(nameEn, 'Название (EN)'),
-                  const SizedBox(height: 12),
-                  _field(nameTr, 'Название (TR)'),
+                  _field(name, '${Translations.label('Название', languages.first)} *'),
+                  for (final lang in translations.languages) ...[
+                    const SizedBox(height: 12),
+                    _field(translations.controller(lang, 'name'), Translations.label('Название', lang)),
+                  ],
                   const SizedBox(height: 12),
                   _field(sortOrder, 'Порядок', isNumber: true),
                   const SizedBox(height: 12),
@@ -203,8 +205,8 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: _accent, foregroundColor: Colors.black),
               onPressed: uploading ? null : () async {
-                if (nameRu.text.trim().isEmpty) {
-                  _toast('Введите название (RU)', isError: true);
+                if (name.text.trim().isEmpty) {
+                  _toast('Введите ${Translations.label('название', languages.first)}', isError: true);
                   return;
                 }
                 final branch = currentBranch.value;
@@ -213,9 +215,8 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                   return;
                 }
                 final data = {
-                  'name': nameRu.text.trim(),
-                  'name_en': nameEn.text.trim(),
-                  'name_tr': nameTr.text.trim(),
+                  'name': name.text.trim(),
+                  'i18n': translations.toJson(),
                   'sort_order': int.tryParse(sortOrder.text) ?? 0,
                   'parent_id': parent,
                   if (imageUrl != null && imageUrl!.isNotEmpty) 'image_url': imageUrl,
@@ -358,7 +359,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                       title: Text(cat['name'] ?? '', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
                       subtitle: Text(
                         '${isSub ? 'подкатегория   ·   ' : ''}'
-                        '${cat['name_en'] ?? '—'}  /  ${cat['name_tr'] ?? '—'}   ·   порядок: ${cat['sort_order'] ?? 0}',
+                        '${_translated(cat)}порядок: ${cat['sort_order'] ?? 0}',
                         style: const TextStyle(color: Colors.white38, fontSize: 12),
                       ),
                       trailing: Row(
@@ -386,6 +387,17 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                   },
                 ),
     );
+  }
+
+  /// «перевод: EN, KY   ·   » — на какие языки филиала переведено название
+  String _translated(Map<String, dynamic> cat) {
+    final extra = (currentBranch.value?.languages ?? const ['ru']).skip(1).toList();
+    if (extra.isEmpty) return '';
+    final done = i18nFromJson(cat['i18n']);
+    final missing = extra.where((l) => !done.containsKey(l)).toList();
+    return missing.isEmpty
+        ? 'переведено   ·   '
+        : 'нет перевода: ${missing.map((l) => l.toUpperCase()).join(', ')}   ·   ';
   }
 
   Widget _placeholder([double size = 56]) => Container(

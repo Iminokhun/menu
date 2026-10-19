@@ -1,8 +1,10 @@
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:sqlite3/sqlite3.dart';
 
 import 'billing.dart';
+import 'languages.dart';
 
 /// Схема базы. Применяется при каждом запуске: все `create` идемпотентны.
 ///
@@ -71,6 +73,8 @@ create table if not exists branches (
   card_size  text    not null default '',
   corners    text    not null default '',
   title_font text    not null default '',
+  -- Языки меню (languages.dart), JSON-массив: первый — основной
+  languages  text    not null default '["ru"]',
   is_active  integer not null default 1,
   sort_order integer not null default 0
 );
@@ -79,9 +83,10 @@ create table if not exists categories (
   id         text primary key,
   branch_id  text not null references branches(id) on delete cascade,
   parent_id  text references categories(id) on delete set null,
+  -- name — на основном языке филиала, переводы — в i18n:
+  -- {"en": {"name": "..."}, ...}
   name       text    not null default '',
-  name_en    text    not null default '',
-  name_tr    text    not null default '',
+  i18n       text    not null default '{}',
   image_url  text    not null default '',
   is_visible integer not null default 1,
   sort_order integer not null default 0
@@ -91,12 +96,11 @@ create table if not exists products (
   id          text primary key,
   branch_id   text not null references branches(id) on delete cascade,
   category_id text references categories(id) on delete cascade,
+  -- name и description — на основном языке филиала, переводы — в i18n:
+  -- {"en": {"name": "...", "description": "..."}, ...}
   name        text    not null default '',
-  name_en     text    not null default '',
-  name_tr     text    not null default '',
   description text    not null default '',
-  desc_en     text    not null default '',
-  desc_tr     text    not null default '',
+  i18n        text    not null default '{}',
   price       real    not null default 0,
   image_url   text    not null default '',
   model_url   text    not null default '',
@@ -166,8 +170,7 @@ void _migrate(Database db) {
       .toSet();
   if (!cafeCols.contains('plan')) {
     final until = formatDate(DateTime.now().add(const Duration(days: 30)));
-    db.execute('begin');
-    try {
+    inTransaction(db, () {
       db.execute(
         "alter table cafes add column plan text not null default 'trial'",
       );
@@ -175,11 +178,81 @@ void _migrate(Database db) {
         "alter table cafes add column paid_until text not null default ''",
       );
       db.execute('update cafes set paid_until = ?', [until]);
-      db.execute('commit');
-    } catch (_) {
-      db.execute('rollback');
-      rethrow;
+    });
+  }
+
+  // Языки меню. Раньше их было три постоянных — филиалы, заведённые тогда,
+  // их и сохраняют
+  if (!branchCols.contains('languages')) {
+    inTransaction(db, () {
+      db.execute(
+        "alter table branches add column languages text not null "
+        "default '${jsonEncode(defaultLanguages)}'",
+      );
+      db.execute('update branches set languages = ?', [
+        jsonEncode(['ru', 'en', 'tr']),
+      ]);
+    });
+  }
+  _moveTranslations(db, 'categories', {
+    'name_en': ('en', 'name'),
+    'name_tr': ('tr', 'name'),
+  });
+  _moveTranslations(db, 'products', {
+    'name_en': ('en', 'name'),
+    'name_tr': ('tr', 'name'),
+    'desc_en': ('en', 'description'),
+    'desc_tr': ('tr', 'description'),
+  });
+}
+
+/// Переводы из постоянных колонок (`name_en`, `desc_tr`…) — в `i18n`,
+/// а сами колонки убираются. [columns]: колонка → (язык, поле).
+void _moveTranslations(
+  Database db,
+  String table,
+  Map<String, (String, String)> columns,
+) {
+  final cols = db
+      .select('pragma table_info($table)')
+      .map((r) => r['name'])
+      .toSet();
+  if (!cols.contains(columns.keys.first)) return;
+  inTransaction(db, () {
+    if (!cols.contains('i18n')) {
+      db.execute(
+        "alter table $table add column i18n text not null default '{}'",
+      );
     }
+    final rows = db.select('select id, ${columns.keys.join(', ')} from $table');
+    final update = db.prepare('update $table set i18n = ? where id = ?');
+    try {
+      for (final row in rows) {
+        final i18n = <String, Map<String, String>>{};
+        columns.forEach((col, target) {
+          final text = (row[col] as String? ?? '').trim();
+          if (text.isNotEmpty) (i18n[target.$1] ??= {})[target.$2] = text;
+        });
+        if (i18n.isNotEmpty) update.execute([jsonEncode(i18n), row['id']]);
+      }
+    } finally {
+      update.close();
+    }
+    for (final col in columns.keys) {
+      db.execute('alter table $table drop column $col');
+    }
+  });
+}
+
+/// [body] целиком или ничего: схема не остаётся наполовину обновлённой.
+void inTransaction(Database db, void Function() body) {
+  db.execute('begin');
+  try {
+    body();
+    db.execute('commit');
+  } catch (_) {
+    db.execute('rollback');
+    rethrow;
   }
 }
 

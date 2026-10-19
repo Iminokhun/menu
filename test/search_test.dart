@@ -4,11 +4,11 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   final menu = [
-    Product(id: 'soups', parentId: '', name: 'Супы', nameEn: 'Soups', isGroup: true),
+    Product(id: 'soups', parentId: '', name: 'Супы', i18n: const {'en': {'name': 'Soups'}}, isGroup: true),
     Product(id: 'hot', parentId: '', name: 'Горячее', isGroup: true),
     Product(id: 'kebab', parentId: 'hot', name: 'Шашлык', isGroup: true),
     Product(id: 'd1', parentId: 'soups', name: 'Суп грибной', description: 'С белыми грибами'),
-    Product(id: 'd2', parentId: 'soups', name: 'Борщ', nameEn: 'Borscht'),
+    Product(id: 'd2', parentId: 'soups', name: 'Борщ', i18n: const {'ky': {'name': 'Borscht'}}),
     Product(id: 'd3', parentId: 'hot', name: 'Плов', description: 'Рис, морковь, баранина'),
     Product(id: 'd4', parentId: 'kebab', name: 'Из баранины'),
     Product(id: 'd5', parentId: 'hot', name: 'Жаркое с грибами'),

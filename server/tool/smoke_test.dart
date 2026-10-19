@@ -143,6 +143,11 @@ Future<void> main(List<String> args) async {
         r[0]['qr_url'] == '$menuUrl/?branch=$slugA',
     r,
   );
+  expect(
+    'у нового кафе один язык — русский',
+    (r[0]['languages'] as List).join(',') == 'ru',
+    r[0]['languages'],
+  );
   final branchA = r[0]['id'];
   (s, r) = await call(
     'POST',
@@ -478,6 +483,138 @@ Future<void> main(List<String> args) async {
   );
   final prodA = r['id'];
 
+  // ---------- Языки меню ----------
+  for (final (what, langs) in [
+    ('неизвестный язык', ['ru', 'xx']),
+    ('пустой список', <String>[]),
+    ('повтор', ['ru', 'ru']),
+  ]) {
+    (s, r) = await call(
+      'PATCH',
+      '/api/admin/branches/$branchA',
+      token: ta,
+      body: {'languages': langs},
+    );
+    expect('языки: $what → 400', s == 400, r);
+  }
+  (s, r) = await call(
+    'PATCH',
+    '/api/admin/branches/$branchA',
+    token: ta,
+    body: {
+      'languages': ['ru', 'en', 'ky'],
+    },
+  );
+  expect(
+    'языки филиала: ru, en, ky',
+    s == 200 && (r['languages'] as List).join(',') == 'ru,en,ky',
+    r,
+  );
+  (s, r) = await call(
+    'PATCH',
+    '/api/admin/products/$prodA',
+    token: ta,
+    body: {
+      'description': 'Со сметаной',
+      'i18n': {
+        'en': {'name': 'Borscht', 'description': ''},
+        'ky': {'name': 'Борщ'},
+      },
+    },
+  );
+  expect(
+    'перевод блюда, пустой текст отброшен',
+    s == 200 &&
+        jsonEncode(r['i18n']) ==
+            '{"en":{"name":"Borscht"},"ky":{"name":"Борщ"}}',
+    r,
+  );
+  for (final (what, i18n) in [
+    (
+      'неизвестный язык',
+      {
+        'xx': {'name': 'a'},
+      },
+    ),
+    (
+      'неизвестное поле',
+      {
+        'en': {'price': 'a'},
+      },
+    ),
+    (
+      'не текст',
+      {
+        'en': {'name': 5},
+      },
+    ),
+  ]) {
+    (s, r) = await call(
+      'PATCH',
+      '/api/admin/products/$prodA',
+      token: ta,
+      body: {'i18n': i18n},
+    );
+    expect('перевод: $what → 400', s == 400, r);
+  }
+  (s, r) = await call(
+    'PATCH',
+    '/api/admin/branches/$branchA',
+    token: ta,
+    body: {
+      'languages': ['en', 'ru', 'ky'],
+    },
+  );
+  expect('основной язык — английский', s == 200, r);
+  (s, r) = await call(
+    'GET',
+    '/api/admin/products?branch_id=$branchA',
+    token: ta,
+  );
+  final borscht = (r as List).firstWhere((p) => p['id'] == prodA);
+  expect(
+    'смена основного языка: английский стал основным, русский — переводом',
+    borscht['name'] == 'Borscht' &&
+        borscht['description'] == 'Со сметаной' &&
+        jsonEncode(borscht['i18n']) ==
+            '{"ky":{"name":"Борщ"},"ru":{"name":"Борщ","description":"Со сметаной"}}',
+    borscht,
+  );
+  (s, r) = await call(
+    'GET',
+    '/api/admin/categories?branch_id=$branchA',
+    token: ta,
+  );
+  final soups = (r as List).firstWhere((c) => c['id'] == catA);
+  expect(
+    'категория без английского: название прежнее, русский — в переводах',
+    soups['name'] == 'Супы' &&
+        jsonEncode(soups['i18n']) == '{"ru":{"name":"Супы"}}',
+    soups,
+  );
+  (s, r) = await call(
+    'PATCH',
+    '/api/admin/branches/$branchA',
+    token: ta,
+    body: {
+      'languages': ['ru', 'en', 'ky'],
+    },
+  );
+  (s, r) = await call(
+    'GET',
+    '/api/admin/products?branch_id=$branchA',
+    token: ta,
+  );
+  final back = (r as List).firstWhere((p) => p['id'] == prodA);
+  expect(
+    'обратно на русский — тексты как были',
+    back['name'] == 'Борщ' &&
+        back['description'] == 'Со сметаной' &&
+        jsonEncode(back['i18n']) ==
+            '{"ky":{"name":"Борщ"},"en":{"name":"Borscht"}}',
+    back,
+  );
+
   // Данные неверного типа не попадают в базу: иначе одна такая строка
   // ломала бы меню гостя целиком
   for (final (what, body) in [
@@ -607,7 +744,11 @@ Future<void> main(List<String> args) async {
     token: ta,
     body: {'name': 'Второй', 'slug': 'a2-$stamp'},
   );
-  expect('после повышения лимита второй филиал создаётся', s == 201, r);
+  expect(
+    'после повышения лимита второй филиал создаётся — с языками первого',
+    s == 201 && (r['languages'] as List).join(',') == 'ru,en,ky',
+    r,
+  );
 
   // Оплата
   final today = DateTime.now();

@@ -82,11 +82,13 @@ void main() {
       "insert into branches (id, cafe_id, slug, name) values ('b', 'c', 'center', 'Центр')",
     );
     old.execute(
-      "insert into categories (id, branch_id, name) values ('k', 'b', 'Горячее')",
+      "insert into categories (id, branch_id, name, name_en) values ('k', 'b', 'Горячее', 'Hot')",
     );
     old.execute(
-      '''insert into products (id, branch_id, category_id, name, price, portions)
-                   values ('p', 'b', 'k', 'Плов', 350, '[{"name":"Большая","price":450}]')''',
+      '''insert into products (id, branch_id, category_id, name, name_en, name_tr,
+                               description, desc_en, price, portions)
+                   values ('p', 'b', 'k', 'Плов', 'Pilaf', 'Pilav', 'С мясом',
+                           'With meat', 350, '[{"name":"Большая","price":450}]')''',
     );
     expect('старая база без model_url', !columns(old).contains('model_url'));
     old.close();
@@ -147,6 +149,26 @@ void main() {
                   .first['theme'] ==
               '',
       branchCols,
+    );
+    expect(
+      'старый филиал сохранил три языка',
+      db
+              .select("select languages from branches where id = 'b'")
+              .first['languages'] ==
+          '["ru","en","tr"]',
+    );
+    final cat = db.select("select * from categories where id = 'k'").first;
+    expect(
+      'переводы категории — в i18n, старых колонок нет',
+      cat['i18n'] == '{"en":{"name":"Hot"}}' && !cat.containsKey('name_en'),
+      cat,
+    );
+    expect(
+      'переводы блюда — в i18n, пустой турецкий описания не появился',
+      row['i18n'] ==
+              '{"en":{"name":"Pilaf","description":"With meat"},"tr":{"name":"Pilav"}}' &&
+          !columns(db).any((c) => c.endsWith('_en') || c.endsWith('_tr')),
+      row,
     );
     expect(
       'новые таблицы созданы (users, sessions)',

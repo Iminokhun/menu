@@ -9,6 +9,7 @@ import 'package:sqlite3/sqlite3.dart';
 import 'auth.dart';
 import 'billing.dart';
 import 'db.dart';
+import 'languages.dart';
 import 'media.dart';
 import 'security.dart';
 import 'slug.dart';
@@ -34,13 +35,13 @@ const _branchFields = {
   'qr_url',
   'is_active',
   'sort_order',
+  'languages',
   ...styleColumns,
 };
 const _categoryFields = {
   'parent_id',
   'name',
-  'name_en',
-  'name_tr',
+  'i18n',
   'image_url',
   'is_visible',
   'sort_order',
@@ -48,11 +49,8 @@ const _categoryFields = {
 const _productFields = {
   'category_id',
   'name',
-  'name_en',
-  'name_tr',
   'description',
-  'desc_en',
-  'desc_tr',
+  'i18n',
   'price',
   'image_url',
   'model_url',
@@ -60,6 +58,9 @@ const _productFields = {
   'sort_order',
   'portions',
 };
+
+/// Поля, которые в базе лежат JSON-текстом, а наружу отдаются как есть.
+const _jsonFields = {'portions', 'languages', 'i18n'};
 
 /// Поля с адресами файлов: в базе хранится путь `/uploads/...`,
 /// наружу отдаётся полный адрес. Так база не привязана к домену сервера.
@@ -252,8 +253,8 @@ class Api {
         (m['qr_url'] ?? '') == '') {
       m['qr_url'] = _qrLink(req, m['slug'] as String);
     }
-    if (m['portions'] is String) {
-      m['portions'] = jsonDecode(m['portions'] as String);
+    for (final f in _jsonFields) {
+      if (m[f] is String) m[f] = jsonDecode(m[f] as String);
     }
     return m;
   }
@@ -268,7 +269,7 @@ class Api {
       if (i >= 0 && v.startsWith(_base(req))) return v.substring(i);
       return v;
     }
-    if (field == 'portions') return jsonEncode(v);
+    if (_jsonFields.contains(field)) return jsonEncode(v);
     return toSql(v);
   }
 
@@ -422,6 +423,19 @@ class Api {
         throw ApiError(400, 'Цена должна быть числом не меньше 0');
       case 'is_active' || 'is_visible':
         if (v is bool) return v;
+      case 'languages':
+        if (v is List &&
+            v.isNotEmpty &&
+            v.every(menuLanguages.contains) &&
+            v.toSet().length == v.length) {
+          return List<String>.from(v);
+        }
+        throw ApiError(
+          400,
+          'Языки: хотя бы один, без повторов, из списка ${menuLanguages.join(', ')}',
+        );
+      case 'i18n':
+        return _validI18n(v);
       case 'portions':
         if (v == null) return const [];
         if (v is List && v.every(_validPortion)) {
@@ -441,6 +455,29 @@ class Api {
         if (v is String) return v;
     }
     throw ApiError(400, 'Неверное значение поля «$field»');
+  }
+
+  /// Переводы `{"en": {"name": "...", "description": "..."}}`: только
+  /// известные языки и поля, пустые строки отбрасываются.
+  static Map<String, Map<String, String>> _validI18n(Object? v) {
+    if (v == null) return const {};
+    const error = 'Переводы: {"язык": {"name": "...", "description": "..."}}';
+    if (v is! Map) throw ApiError(400, error);
+    final out = <String, Map<String, String>>{};
+    for (final MapEntry(:key, :value) in v.entries) {
+      if (!menuLanguages.contains(key) || value is! Map) {
+        throw ApiError(400, error);
+      }
+      final texts = <String, String>{};
+      for (final MapEntry(key: field, value: text) in value.entries) {
+        if (!translatableFields.contains(field) || text is! String) {
+          throw ApiError(400, error);
+        }
+        if (text.trim().isNotEmpty) texts[field as String] = text.trim();
+      }
+      if (texts.isNotEmpty) out[key as String] = texts;
+    }
+    return out;
   }
 
   static bool _validPortion(Object? p) {
@@ -667,6 +704,15 @@ class Api {
       );
     }
 
+    // Языки — как у первого филиала кафе: обычно меню на тех же языках
+    if (!data.containsKey('languages')) {
+      final first = db.select(
+        'select languages from branches where cafe_id = ? order by sort_order limit 1',
+        [u.cafeId],
+      );
+      if (first.isNotEmpty) data['languages'] = first.first['languages'];
+    }
+
     final id = newId();
     try {
       _insert('branches', {
@@ -695,14 +741,64 @@ class Api {
       }
       data['slug'] = _checkSlug(slug);
     }
+    final oldMain = _mainLanguage(
+      db.select('select languages from branches where id = ?', [id]).first,
+    );
+    final newMain = data.containsKey('languages')
+        ? (jsonDecode(data['languages'] as String) as List).first as String
+        : oldMain;
     try {
-      _update('branches', id, data);
+      inTransaction(db, () {
+        _update('branches', id, data);
+        if (newMain != oldMain) _switchMainLanguage(id, oldMain, newMain);
+      });
     } on SqliteException catch (e) {
       _sqlError(e, slug: data['slug'] as String?);
     }
     return _json(
       _out(req, db.select('select * from branches where id = ?', [id]).first),
     );
+  }
+
+  static String _mainLanguage(Row branch) =>
+      (jsonDecode(branch['languages'] as String) as List).first as String;
+
+  /// Основной язык филиала сменился: тексты основного языка (name,
+  /// description) и перевод на новый основной меняются местами. Если
+  /// перевода нет — текст остаётся прежним, чтобы блюдо не стало пустым;
+  /// при обратной смене такая копия переводом не считается.
+  void _switchMainLanguage(String branchId, String from, String to) {
+    for (final (table, fields) in [
+      ('categories', ['name']),
+      ('products', ['name', 'description']),
+    ]) {
+      final rows = db.select(
+        'select id, ${fields.join(', ')}, i18n from $table where branch_id = ?',
+        [branchId],
+      );
+      for (final row in rows) {
+        final i18n = (jsonDecode(row['i18n'] as String) as Map)
+            .cast<String, dynamic>();
+        final target = (i18n.remove(to) as Map?)?.cast<String, dynamic>() ?? {};
+        final previous = <String, String>{};
+        final main = <String, String>{};
+        for (final f in fields) {
+          final current = row[f] as String;
+          final translated = (target[f] as String?) ?? '';
+          // Текст, равный переводу, — это копия, оставленная при прошлой
+          // смене языка (перевода тогда не было), а не текст на [from]
+          if (current.isNotEmpty && current != translated) {
+            previous[f] = current;
+          }
+          main[f] = translated.isNotEmpty ? translated : current;
+        }
+        if (previous.isNotEmpty) i18n[from] = previous;
+        _update(table, row['id'] as String, {
+          ...main,
+          'i18n': jsonEncode(i18n),
+        });
+      }
+    }
   }
 
   Response _deleteBranch(Request req, String id) {

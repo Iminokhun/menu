@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -5,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'config/current_branch.dart';
 import 'menu_store.dart';
 import 'l10n/app_localizations.dart';
+import 'l10n/languages.dart';
 import 'l10n/translation_service.dart';
 import 'models/branch.dart';
 import 'screens/branch_picker_screen.dart';
@@ -26,6 +28,7 @@ void main() async {
   menuStore.data.addListener(_syncBranch);
   menuStore.status.addListener(_syncBranch);
   currentBranch.addListener(_syncTheme);
+  currentBranch.addListener(_syncLanguage);
   final slug = await resolveBranchSlug();
   if (slug != null) await menuStore.open(slug);
 
@@ -53,7 +56,8 @@ void _syncBranch() {
         cur.phone == b.phone &&
         cur.logoUrl == b.logoUrl &&
         cur.qrUrl == b.qrUrl &&
-        cur.style == b.style;
+        cur.style == b.style &&
+        listEquals(cur.languages, b.languages);
     if (!same) currentBranch.value = b;
   } else if (menuStore.status.value == MenuResult.notFound ||
       menuStore.status.value == MenuResult.unpaid) {
@@ -69,6 +73,21 @@ void _syncTheme() {
   if (style == _appliedStyle) return; // не перестраиваем всё приложение зря
   _appliedStyle = style;
   appTheme.value = ThemeConfig.forStyle(style);
+}
+
+/// Язык меню — один из языков филиала: кафе могло убрать язык, на котором
+/// гость читал, или гость открыл другой филиал.
+void _syncLanguage() {
+  final branch = currentBranch.value;
+  if (branch == null) return;
+  final lang = pickLanguage(
+    branch.languages,
+    chosenLanguage,
+    PlatformDispatcher.instance.locale.languageCode,
+  );
+  if (lang != currentLocale.value.languageCode) {
+    currentLocale.value = Locale(lang);
+  }
 }
 
 class CafeAndalusRoot extends StatelessWidget {
@@ -88,10 +107,8 @@ class CafeAndalusRoot extends StatelessWidget {
                 title: 'Cafe Andalus',
                 debugShowCheckedModeBanner: false,
                 locale: locale,
-                supportedLocales: const [
-                  Locale('ru'),
-                  Locale('en'),
-                  Locale('tr'),
+                supportedLocales: [
+                  for (final l in menuLanguages) Locale(l.code),
                 ],
                 localizationsDelegates: const [
                   AppLocalizationsDelegate(),

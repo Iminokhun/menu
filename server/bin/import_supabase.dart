@@ -90,6 +90,19 @@ Future<void> main(List<String> args) async {
 
   int b(Object? v) => v == false ? 0 : 1;
 
+  // Переводы Supabase (name_en, desc_tr…) — в i18n: {"en": {"name": …}}.
+  // [fields]: префикс колонки в Supabase → поле перевода
+  String translations(Map<String, dynamic> row, Map<String, String> fields) {
+    final i18n = <String, Map<String, String>>{};
+    for (final lang in ['en', 'tr']) {
+      fields.forEach((prefix, field) {
+        final text = ((row['${prefix}_$lang'] as String?) ?? '').trim();
+        if (text.isNotEmpty) (i18n[lang] ??= {})[field] = text;
+      });
+    }
+    return jsonEncode(i18n);
+  }
+
   db.execute('begin');
   try {
     // Пробный срок, как у нового кафе из главной админки: без даты меню
@@ -109,8 +122,8 @@ Future<void> main(List<String> args) async {
       db.execute(
         '''
         insert into branches (id, cafe_id, slug, name, slogan, phone, logo_url, qr_url,
-                              is_active, sort_order)
-        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                              is_active, sort_order, languages)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
         [
           r['id'],
           cafeId,
@@ -122,6 +135,8 @@ Future<void> main(List<String> args) async {
           r['qr_url'] ?? '',
           b(r['is_active']),
           r['sort_order'] ?? 0,
+          // В Supabase у меню было три постоянных языка
+          jsonEncode(['ru', 'en', 'tr']),
         ],
       );
     }
@@ -143,16 +158,15 @@ Future<void> main(List<String> args) async {
       for (final c in ready) {
         db.execute(
           '''
-          insert into categories (id, branch_id, parent_id, name, name_en, name_tr,
+          insert into categories (id, branch_id, parent_id, name, i18n,
                                   image_url, is_visible, sort_order)
-          values (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+          values (?, ?, ?, ?, ?, ?, ?, ?)''',
           [
             c['id'],
             c['branch_id'],
             c['parent_id'],
             c['name'] ?? '',
-            c['name_en'] ?? '',
-            c['name_tr'] ?? '',
+            translations(c, {'name': 'name'}),
             await image(c['image_url']),
             b(c['is_visible']),
             c['sort_order'] ?? 0,
@@ -166,20 +180,16 @@ Future<void> main(List<String> args) async {
     for (final p in products) {
       db.execute(
         '''
-        insert into products (id, branch_id, category_id, name, name_en, name_tr,
-                              description, desc_en, desc_tr, price, image_url,
-                              is_visible, sort_order, portions)
-        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+        insert into products (id, branch_id, category_id, name, description, i18n,
+                              price, image_url, is_visible, sort_order, portions)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
         [
           p['id'],
           p['branch_id'],
           p['category_id'],
           p['name'] ?? '',
-          p['name_en'] ?? '',
-          p['name_tr'] ?? '',
           p['description'] ?? '',
-          p['desc_en'] ?? '',
-          p['desc_tr'] ?? '',
+          translations(p, {'name': 'name', 'desc': 'description'}),
           (p['price'] as num?)?.toDouble() ?? 0,
           await image(p['image_url']),
           b(p['is_visible']),

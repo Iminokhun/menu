@@ -19,3 +19,22 @@ int jsonInt(Object? v, [int fallback = 0]) {
   if (v is String) return int.tryParse(v) ?? fallback;
   return fallback;
 }
+
+/// Переводы `{"en": {"name": "…"}}`. Пустые тексты и значения не того
+/// типа пропускаются — блюдо тогда показывается на основном языке.
+Map<String, Map<String, String>> i18nFromJson(Object? v) {
+  if (v is! Map) return const {};
+  return {
+    for (final MapEntry(:key, :value) in v.entries)
+      if (key is String && value is Map)
+        key: {
+          for (final MapEntry(key: field, value: text) in value.entries)
+            if (field is String && text is String && text.isNotEmpty)
+              field: text,
+        },
+  };
+}
+
+/// Список строк; всё, что не строка, пропускается.
+List<String> jsonStrings(Object? v) =>
+    v is List ? [for (final x in v) if (x is String) x] : const [];

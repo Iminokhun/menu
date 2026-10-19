@@ -4,6 +4,7 @@ import '../../api/api_client.dart';
 import '../../config/current_branch.dart';
 import '../../image_upload.dart';
 import 'category_tree.dart';
+import 'translations.dart';
 
 class AdminProductsScreen extends StatefulWidget {
   const AdminProductsScreen({super.key});
@@ -117,12 +118,11 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
   }
 
   void _showDialog({Map<String, dynamic>? item}) {
-    final nameRu = TextEditingController(text: item?['name'] ?? '');
-    final nameEn = TextEditingController(text: item?['name_en'] ?? '');
-    final nameTr = TextEditingController(text: item?['name_tr'] ?? '');
-    final descRu = TextEditingController(text: item?['description'] ?? '');
-    final descEn = TextEditingController(text: item?['desc_en'] ?? '');
-    final descTr = TextEditingController(text: item?['desc_tr'] ?? '');
+    final languages = currentBranch.value?.languages ?? const ['ru'];
+    final name = TextEditingController(text: item?['name'] ?? '');
+    final desc = TextEditingController(text: item?['description'] ?? '');
+    final translations =
+        Translations(item?['i18n'], languages, const ['name', 'description']);
     final price = TextEditingController(text: (item?['price'] ?? '').toString());
     final sortOrder = TextEditingController(text: (item?['sort_order'] ?? 0).toString());
     String? imageUrl = item?['image_url'];
@@ -183,21 +183,22 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                   // Названия
                   _sectionLabel('НАЗВАНИЕ'),
                   const SizedBox(height: 8),
-                  _field(nameRu, 'Название (RU) *'),
-                  const SizedBox(height: 8),
-                  _field(nameEn, 'Название (EN)'),
-                  const SizedBox(height: 8),
-                  _field(nameTr, 'Название (TR)'),
+                  _field(name, '${Translations.label('Название', languages.first)} *'),
+                  for (final lang in translations.languages) ...[
+                    const SizedBox(height: 8),
+                    _field(translations.controller(lang, 'name'), Translations.label('Название', lang)),
+                  ],
                   const SizedBox(height: 16),
 
                   // Описания
                   _sectionLabel('ОПИСАНИЕ'),
                   const SizedBox(height: 8),
-                  _field(descRu, 'Описание (RU)', maxLines: 2),
-                  const SizedBox(height: 8),
-                  _field(descEn, 'Описание (EN)', maxLines: 2),
-                  const SizedBox(height: 8),
-                  _field(descTr, 'Описание (TR)', maxLines: 2),
+                  _field(desc, Translations.label('Описание', languages.first), maxLines: 2),
+                  for (final lang in translations.languages) ...[
+                    const SizedBox(height: 8),
+                    _field(translations.controller(lang, 'description'),
+                        Translations.label('Описание', lang), maxLines: 2),
+                  ],
                   const SizedBox(height: 16),
 
                   // Цена и порядок
@@ -404,7 +405,7 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: _accent, foregroundColor: Colors.black),
               onPressed: uploading || uploadingModel ? null : () async {
-                if (nameRu.text.trim().isEmpty || selectedCatId == null) {
+                if (name.text.trim().isEmpty || selectedCatId == null) {
                   _toast('Заполните обязательные поля', isError: true);
                   return;
                 }
@@ -415,12 +416,9 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                 }
                 final data = {
                   'category_id': selectedCatId,
-                  'name': nameRu.text.trim(),
-                  'name_en': nameEn.text.trim(),
-                  'name_tr': nameTr.text.trim(),
-                  'description': descRu.text.trim(),
-                  'desc_en': descEn.text.trim(),
-                  'desc_tr': descTr.text.trim(),
+                  'name': name.text.trim(),
+                  'description': desc.text.trim(),
+                  'i18n': translations.toJson(),
                   'price': double.tryParse(price.text) ?? 0,
                   'sort_order': int.tryParse(sortOrder.text) ?? 0,
                   'is_visible': isVisible,
