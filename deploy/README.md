@@ -106,6 +106,14 @@ DATA_DIR=import-data dart run bin/import_supabase.dart \
 DATA_DIR=import-data dart run bin/import_1c.dart D:/nomenclature2.json center
 ```
 
+И карты глубины для «живого фото» (без них блюдо только сдвигается целиком,
+без объёма; ~3 минуты на 450 фото, нужны `pip install onnxruntime pillow
+numpy` и модель Depth Anything V2 Small в формате ONNX):
+
+```sh
+python tool/depth_maps.py model.onnx import-data/uploads
+```
+
 Получится папка `server/import-data` (база и фото). У кафе сразу пробный
 срок 14 дней — оплату потом ставите в главной админке. Перенесите папку на
 сервер:
