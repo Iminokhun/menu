@@ -276,6 +276,48 @@ Future<void> main(List<String> args) async {
   );
   final branchB = r['id'];
 
+  // Оформление сразу на все филиалы кафе
+  (s, r) = await call(
+    'PATCH',
+    '/api/admin/style',
+    token: tb,
+    body: {'theme': 'porcelain', 'accent': '#ff0000', 'slug': 'chuzhoe'},
+  );
+  expect(
+    'оформление на все филиалы: у обоих, slug не тронут',
+    s == 200 &&
+        (r as List).length == 2 &&
+        r.every((b) => b['theme'] == 'porcelain' && b['accent'] == '#FF0000') &&
+        r.every((b) => b['slug'] != 'chuzhoe'),
+    r,
+  );
+  (s, r) = await call(
+    'PATCH',
+    '/api/admin/style',
+    token: tb,
+    body: {'theme': 'neon', 'accent': '#00FF00'},
+  );
+  expect('оформление на все: неверная тема → 400', s == 400, r);
+  (s, r) = await call('GET', '/api/admin/branches', token: tb);
+  expect(
+    'после ошибки оформление прежнее у всех',
+    (r as List).every((b) => b['accent'] == '#FF0000'),
+    r,
+  );
+  (s, r) = await call(
+    'PATCH',
+    '/api/admin/style',
+    token: tb,
+    body: {'name': 'x'},
+  );
+  expect('оформление на все: без полей оформления → 400', s == 400, r);
+  (s, r) = await call('GET', '/api/admin/branches', token: ta);
+  expect(
+    'чужое кафе не задето',
+    (r as List).every((b) => b['theme'] != 'porcelain'),
+    r,
+  );
+
   (s, r) = await call(
     'POST',
     '/api/admin/categories',

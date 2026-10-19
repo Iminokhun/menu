@@ -164,6 +164,7 @@ class Api {
     r.post('/api/admin/branches', _createBranch);
     r.patch('/api/admin/branches/<id>', _updateBranch);
     r.delete('/api/admin/branches/<id>', _deleteBranch);
+    r.patch('/api/admin/style', _updateStyleAll);
 
     r.get('/api/admin/categories', _listCategories);
     r.post('/api/admin/categories', _createCategory);
@@ -799,6 +800,24 @@ class Api {
         });
       }
     }
+  }
+
+  /// Одно оформление на все филиалы кафе — одним запросом: либо у всех,
+  /// либо ни у кого. Поля, кроме оформления, отбрасываются.
+  Future<Response> _updateStyleAll(Request req) async {
+    final u = _cafeAdmin(req);
+    final data = _pick(req, await _body(req), styleColumns.toSet());
+    if (data.isEmpty) throw ApiError(400, 'Нет полей оформления');
+    final set = data.keys.map((k) => '$k = ?').join(', ');
+    db.execute('update branches set $set where cafe_id = ?', [
+      ...data.values,
+      u.cafeId,
+    ]);
+    final rows = db.select(
+      'select * from branches where cafe_id = ? order by sort_order',
+      [u.cafeId],
+    );
+    return _json(_outAll(req, rows));
   }
 
   Response _deleteBranch(Request req, String id) {

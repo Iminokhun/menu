@@ -52,6 +52,13 @@ class _AdminStyleScreenState extends State<AdminStyleScreen> {
   BranchStyle _saved = const BranchStyle();
   BranchStyle _draft = const BranchStyle();
   String _branchName = '';
+
+  /// Все филиалы кафе — чтобы предложить «на все» и понять, есть ли что
+  /// менять у остальных.
+  List<Branch> _branches = const [];
+
+  /// Сохранять оформление на все филиалы, а не только на выбранный
+  bool _toAll = false;
   bool _loading = true;
   bool _saving = false;
   bool _uploading = false;
@@ -72,7 +79,11 @@ class _AdminStyleScreenState extends State<AdminStyleScreen> {
     super.dispose();
   }
 
-  bool get _changed => _draft != _saved;
+  /// Есть что сохранить: правки в этом филиале или, при «на все», другой
+  /// филиал с иным оформлением.
+  bool get _changed =>
+      _draft != _saved ||
+      (_toAll && _branches.any((b) => b.style != _draft));
 
   Future<void> _load() async {
     final branch = currentBranch.value;
@@ -90,6 +101,8 @@ class _AdminStyleScreenState extends State<AdminStyleScreen> {
       final b = Branch.fromJson(row);
       if (!mounted) return;
       setState(() {
+        _branches = [for (final r in rows) Branch.fromJson(r)];
+        if (_branches.length < 2) _toAll = false;
         _saved = _draft = b.style;
         _branchName = b.name;
         _hexCtrl.text = b.style.accent;
@@ -122,12 +135,27 @@ class _AdminStyleScreenState extends State<AdminStyleScreen> {
     if (branch == null) return;
     setState(() => _saving = true);
     try {
-      final row = await api.patch('/api/admin/branches/${branch.id}', _draft.toJson());
-      final updated = Branch.fromJson(row as Map<String, dynamic>);
+      final Branch updated;
+      if (_toAll) {
+        final rows = await api.patch('/api/admin/style', _draft.toJson()) as List;
+        final all = [for (final r in rows) Branch.fromJson(r as Map<String, dynamic>)];
+        updated = all.firstWhere((b) => b.id == branch.id);
+        if (mounted) setState(() => _branches = all);
+      } else {
+        final row = await api.patch('/api/admin/branches/${branch.id}', _draft.toJson());
+        updated = Branch.fromJson(row as Map<String, dynamic>);
+        if (mounted) {
+          setState(() => _branches = [
+                for (final b in _branches) b.id == updated.id ? updated : b,
+              ]);
+        }
+      }
       // Филиал с новым оформлением — меню на этом устройстве меняется сразу
       currentBranch.value = updated;
       if (mounted) setState(() => _saved = _draft = updated.style);
-      _toast('Оформление сохранено');
+      _toast(_toAll
+          ? 'Оформление сохранено для всех филиалов (${_branches.length})'
+          : 'Оформление сохранено для «$_branchName»');
     } catch (e) {
       _toast('Не сохранилось: $e', isError: true);
     }
@@ -466,28 +494,89 @@ class _AdminStyleScreenState extends State<AdminStyleScreen> {
         color: _surface,
         border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
       ),
-      child: SizedBox(
-        width: double.infinity,
-        height: 52,
-        child: ElevatedButton.icon(
-          onPressed: _changed && !_saving && !_uploading ? _save : null,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: _accent,
-            foregroundColor: Colors.black,
-            disabledBackgroundColor: Colors.white10,
-            disabledForegroundColor: Colors.white30,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_branches.length > 1) ...[
+            _targetChoice(),
+            const SizedBox(height: 12),
+          ],
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: ElevatedButton.icon(
+              onPressed: _changed && !_saving && !_uploading ? _save : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _accent,
+                foregroundColor: Colors.black,
+                disabledBackgroundColor: Colors.white10,
+                disabledForegroundColor: Colors.white30,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              icon: _saving
+                  ? const SizedBox(
+                      width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                  : const Icon(Icons.save_outlined),
+              label: Text(
+                _saving
+                    ? 'Сохранение...'
+                    : !_changed
+                        ? 'СОХРАНЕНО'
+                        : _toAll
+                            ? 'СОХРАНИТЬ ДЛЯ ВСЕХ ФИЛИАЛОВ'
+                            : 'СОХРАНИТЬ',
+                style: GoogleFonts.manrope(fontWeight: FontWeight.w800, letterSpacing: 1),
+              ),
+            ),
           ),
-          icon: _saving
-              ? const SizedBox(
-                  width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
-              : const Icon(Icons.save_outlined),
-          label: Text(
-            _saving ? 'Сохранение...' : (_changed ? 'СОХРАНИТЬ' : 'СОХРАНЕНО'),
-            style: GoogleFonts.manrope(fontWeight: FontWeight.w800, letterSpacing: 1),
+        ],
+      ),
+    );
+  }
+
+  /// Куда сохранить: только в выбранный филиал или во все филиалы кафе.
+  Widget _targetChoice() {
+    Widget option(bool all, String text) {
+      final active = _toAll == all;
+      return Expanded(
+        child: GestureDetector(
+          onTap: _saving ? null : () => setState(() => _toAll = all),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            decoration: BoxDecoration(
+              color: active ? _accent.withValues(alpha: 0.15) : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: active ? _accent : Colors.white12),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  active ? Icons.radio_button_checked : Icons.radio_button_off,
+                  size: 18,
+                  color: active ? _accent : Colors.white38,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    text,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: active ? Colors.white : Colors.white60, fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
-      ),
+      );
+    }
+
+    return Row(
+      children: [
+        option(false, 'Только «$_branchName»'),
+        const SizedBox(width: 10),
+        option(true, 'Все филиалы (${_branches.length})'),
+      ],
     );
   }
 }
