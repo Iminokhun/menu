@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../api/api_client.dart';
 import '../../config/current_branch.dart';
 import '../../image_upload.dart';
+import 'category_tree.dart';
 
 class AdminProductsScreen extends StatefulWidget {
   const AdminProductsScreen({super.key});
@@ -74,12 +75,18 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
 
   List<Map<String, dynamic>> get _filtered {
     if (_filterCategoryId == null) return _products;
-    return _products.where((p) => p['category_id'] == _filterCategoryId).toList();
+    // Основная категория — вместе с блюдами её подкатегорий, как у гостя
+    final ids = {
+      _filterCategoryId,
+      for (final c in _categories)
+        if (c['parent_id'] == _filterCategoryId) c['id'],
+    };
+    return _products.where((p) => ids.contains(p['category_id'])).toList();
   }
 
   String _catName(String? id) {
-    if (id == null) return '—';
-    return _categories.firstWhere((c) => c['id'] == id, orElse: () => {})['name'] ?? '—';
+    final cat = _categories.where((c) => c['id'] == id).firstOrNull;
+    return cat == null ? '—' : categoryPath(cat, _categories);
   }
 
   Future<String?> _uploadImage() async {
@@ -119,7 +126,8 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
     final price = TextEditingController(text: (item?['price'] ?? '').toString());
     final sortOrder = TextEditingController(text: (item?['sort_order'] ?? 0).toString());
     String? imageUrl = item?['image_url'];
-    String? selectedCatId = item?['category_id'] ?? (_categories.isNotEmpty ? _categories.first['id'] : null);
+    final tree = categoryTree(_categories);
+    String? selectedCatId = item?['category_id'] ?? (tree.isNotEmpty ? tree.first['id'] : null);
     bool isVisible = item?['is_visible'] ?? true;
     bool uploading = false;
     String modelUrl = (item?['model_url'] as String?) ?? '';
@@ -156,16 +164,17 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                   const Text('Категория *', style: TextStyle(color: Colors.grey, fontSize: 12)),
                   const SizedBox(height: 4),
                   DropdownButtonFormField<String>(
-                    value: selectedCatId,
+                    initialValue: selectedCatId,
                     dropdownColor: const Color(0xFF2A2A2A),
+                    isExpanded: true,
                     style: const TextStyle(color: Colors.white),
                     decoration: const InputDecoration(
                       enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
                       focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: _accent)),
                     ),
-                    items: _categories.map((c) => DropdownMenuItem(
+                    items: tree.map((c) => DropdownMenuItem(
                       value: c['id'] as String,
-                      child: Text(c['name'] ?? ''),
+                      child: Text(categoryPath(c, _categories), overflow: TextOverflow.ellipsis),
                     )).toList(),
                     onChanged: (v) => setS(() => selectedCatId = v),
                   ),
@@ -572,9 +581,10 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                 hint: const Text('Все категории', style: TextStyle(color: Colors.white54, fontSize: 13)),
                 items: [
                   const DropdownMenuItem(value: null, child: Text('Все категории', style: TextStyle(color: Colors.white54))),
-                  ..._categories.map((c) => DropdownMenuItem(
+                  ...categoryTree(_categories).map((c) => DropdownMenuItem(
                     value: c['id'] as String,
-                    child: Text(c['name'] ?? ''),
+                    // Подкатегория — со сдвигом под своей основной
+                    child: Text(isSubcategory(c, _categories) ? '    ${c['name'] ?? ''}' : c['name'] ?? ''),
                   )),
                 ],
                 onChanged: (v) => setState(() => _filterCategoryId = v),

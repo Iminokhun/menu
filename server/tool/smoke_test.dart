@@ -282,6 +282,58 @@ Future<void> main(List<String> args) async {
 
   (s, r) = await call(
     'POST',
+    '/api/admin/categories',
+    token: ta,
+    body: {'branch_id': branchA, 'name': 'Холодные', 'parent_id': catA},
+  );
+  expect('подкатегория', s == 201 && r['parent_id'] == catA, r);
+  final subA = r['id'];
+  (s, r) = await call(
+    'POST',
+    '/api/admin/categories',
+    token: ta,
+    body: {'branch_id': branchA, 'name': 'x', 'parent_id': subA},
+  );
+  expect('подкатегория в подкатегории → 400', s == 400, r);
+  (s, r) = await call(
+    'POST',
+    '/api/admin/categories',
+    token: ta,
+    body: {'branch_id': branchA, 'name': 'Напитки'},
+  );
+  final catDrinks = r['id'];
+  (s, r) = await call(
+    'PATCH',
+    '/api/admin/categories/$catA',
+    token: ta,
+    body: {'parent_id': catDrinks},
+  );
+  expect('категорию с подкатегориями — в подкатегории → 400', s == 400, r);
+  (s, r) = await call(
+    'PATCH',
+    '/api/admin/categories/$subA',
+    token: ta,
+    body: {'parent_id': ''},
+  );
+  expect(
+    'подкатегория → основная (пустой parent_id)',
+    s == 200 && r['parent_id'] == null,
+    r,
+  );
+  (s, r) = await call(
+    'PATCH',
+    '/api/admin/categories/$subA',
+    token: ta,
+    body: {'parent_id': catDrinks},
+  );
+  expect(
+    'перенос в другую категорию',
+    s == 200 && r['parent_id'] == catDrinks,
+    r,
+  );
+
+  (s, r) = await call(
+    'POST',
     '/api/admin/upload?ext=png&prefix=prod_',
     token: ta,
     bytes: utf8.encode('fake image'),

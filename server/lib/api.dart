@@ -356,6 +356,32 @@ class Api {
     if (rows.isEmpty) throw ApiError(400, 'Категория не из этого филиала');
   }
 
+  /// Подкатегории — один уровень, как их показывает меню гостя: родитель
+  /// должен быть основной категорией, а категория с подкатегориями сама
+  /// подкатегорией стать не может.
+  void _checkParent(String? parentId, String branchId, {String? selfId}) {
+    _checkCategory(parentId, branchId, selfId: selfId);
+    if (parentId == null || parentId.isEmpty) return;
+    final parent = db.select('select parent_id from categories where id = ?', [
+      parentId,
+    ]).first;
+    if (parent['parent_id'] != null) {
+      throw ApiError(
+        400,
+        'Подкатегорию можно добавить только в основную категорию',
+      );
+    }
+    if (selfId != null &&
+        db.select('select 1 from categories where parent_id = ?', [
+          selfId,
+        ]).isNotEmpty) {
+      throw ApiError(
+        400,
+        'У категории есть подкатегории — сначала перенесите или удалите их',
+      );
+    }
+  }
+
   Map<String, Object?> _pick(
     Request req,
     Map<String, dynamic> body,
@@ -382,7 +408,9 @@ class Api {
           return v.toUpperCase();
         }
       case 'parent_id' || 'category_id':
-        if (v == null || v is String) return v;
+        // Пустая строка из формы — «без категории», а не ссылка на id ''
+        if (v == null || v == '') return null;
+        if (v is String) return v;
       case 'sort_order':
         if (v is int) return v;
         if (v is double && v.isFinite && v == v.truncateToDouble()) {
@@ -713,7 +741,7 @@ class Api {
         : null;
     _ownBranch(u, branchId);
     final data = _pick(req, body, _categoryFields);
-    _checkCategory(data['parent_id'] as String?, branchId!);
+    _checkParent(data['parent_id'] as String?, branchId!);
     final id = newId();
     _insert('categories', {...data, 'id': id, 'branch_id': branchId});
     return _json(
@@ -726,11 +754,13 @@ class Api {
     final u = _cafeAdmin(req);
     final row = _ownRow(u, 'categories', id);
     final data = _pick(req, await _body(req), _categoryFields);
-    _checkCategory(
-      data['parent_id'] as String?,
-      row['branch_id'] as String,
-      selfId: id,
-    );
+    if (data.containsKey('parent_id')) {
+      _checkParent(
+        data['parent_id'] as String?,
+        row['branch_id'] as String,
+        selfId: id,
+      );
+    }
     _update('categories', id, data);
     return _json(
       _out(req, db.select('select * from categories where id = ?', [id]).first),

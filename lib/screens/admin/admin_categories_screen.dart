@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../api/api_client.dart';
 import '../../config/current_branch.dart';
 import '../../image_upload.dart';
+import 'category_tree.dart';
 
 class AdminCategoriesScreen extends StatefulWidget {
   const AdminCategoriesScreen({super.key});
@@ -79,7 +80,17 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     ));
   }
 
-  void _showDialog({Map<String, dynamic>? item}) {
+  /// [parentId] — родитель новой категории (кнопка «+» у основной).
+  void _showDialog({Map<String, dynamic>? item, String? parentId}) {
+    String? parent = item == null ? parentId : item['parent_id'] as String?;
+    // Подкатегории — один уровень: родителем может быть только основная
+    // категория, а категория со своими подкатегориями остаётся основной
+    final hasChildren =
+        item != null && _categories.any((c) => c['parent_id'] == item['id']);
+    final parents = categoryTree(_categories)
+        .where((c) => !isSubcategory(c, _categories) && c['id'] != item?['id'])
+        .toList();
+    if (!parents.any((c) => c['id'] == parent)) parent = null;
     final nameRu = TextEditingController(text: item?['name'] ?? '');
     final nameEn = TextEditingController(text: item?['name_en'] ?? '');
     final nameTr = TextEditingController(text: item?['name_tr'] ?? '');
@@ -95,7 +106,11 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
           backgroundColor: _surface,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: Text(
-            item == null ? 'Новая категория' : 'Редактировать категорию',
+            item != null
+                ? 'Редактировать категорию'
+                : parentId != null
+                    ? 'Новая подкатегория'
+                    : 'Новая категория',
             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
           ),
           content: SizedBox(
@@ -111,6 +126,37 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                   _field(nameTr, 'Название (TR)'),
                   const SizedBox(height: 12),
                   _field(sortOrder, 'Порядок', isNumber: true),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String?>(
+                    initialValue: parent,
+                    dropdownColor: _surface,
+                    isExpanded: true,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      labelText: 'Входит в категорию',
+                      labelStyle: const TextStyle(color: Colors.grey, fontSize: 13),
+                      helperText: hasChildren
+                          ? 'У неё есть подкатегории — она остаётся основной'
+                          : null,
+                      helperStyle: const TextStyle(color: Colors.white38),
+                      enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+                      focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: _accent)),
+                    ),
+                    items: [
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text('— нет, это основная категория'),
+                      ),
+                      for (final c in parents)
+                        DropdownMenuItem<String?>(
+                          value: c['id'] as String,
+                          child: Text(c['name'] ?? '', overflow: TextOverflow.ellipsis),
+                        ),
+                    ],
+                    onChanged: hasChildren
+                        ? null
+                        : (v) => setDialogState(() => parent = v),
+                  ),
                   const SizedBox(height: 20),
 
                   // Фото
@@ -171,6 +217,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                   'name_en': nameEn.text.trim(),
                   'name_tr': nameTr.text.trim(),
                   'sort_order': int.tryParse(sortOrder.text) ?? 0,
+                  'parent_id': parent,
                   if (imageUrl != null && imageUrl!.isNotEmpty) 'image_url': imageUrl,
                 };
                 try {
@@ -202,6 +249,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
   }
 
   Future<void> _delete(Map<String, dynamic> item) async {
+    final hasChildren = _categories.any((c) => c['parent_id'] == item['id']);
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -209,7 +257,8 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Удалить категорию?', style: TextStyle(color: Colors.white)),
         content: Text(
-          'Категория "${item['name']}" и все её товары будут удалены.',
+          'Категория "${item['name']}" и все её товары будут удалены.'
+          '${hasChildren ? ' Её подкатегории с блюдами останутся и станут основными категориями.' : ''}',
           style: const TextStyle(color: Colors.white70),
         ),
         actions: [
@@ -249,6 +298,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final tree = categoryTree(_categories);
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(
@@ -288,28 +338,38 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                 )
               : ListView.separated(
                   padding: const EdgeInsets.all(20),
-                  itemCount: _categories.length,
+                  itemCount: tree.length,
                   separatorBuilder: (_, __) => const Divider(color: Colors.white12, height: 1),
                   itemBuilder: (_, i) {
-                    final cat = _categories[i];
+                    final cat = tree[i];
+                    final isSub = isSubcategory(cat, _categories);
                     final hasImage = (cat['image_url'] as String?)?.isNotEmpty == true;
+                    final thumb = isSub ? 40.0 : 56.0;
                     return ListTile(
-                      contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                      // Подкатегория — со сдвигом под своей основной
+                      contentPadding: EdgeInsets.only(left: isSub ? 36 : 4, right: 4, top: 8, bottom: 8),
                       leading: ClipRRect(
                         borderRadius: BorderRadius.circular(10),
                         child: hasImage
-                            ? Image.network(cat['image_url'], width: 56, height: 56, fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => _placeholder())
-                            : _placeholder(),
+                            ? Image.network(cat['image_url'], width: thumb, height: thumb, fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => _placeholder(thumb))
+                            : _placeholder(thumb),
                       ),
                       title: Text(cat['name'] ?? '', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
                       subtitle: Text(
+                        '${isSub ? 'подкатегория   ·   ' : ''}'
                         '${cat['name_en'] ?? '—'}  /  ${cat['name_tr'] ?? '—'}   ·   порядок: ${cat['sort_order'] ?? 0}',
                         style: const TextStyle(color: Colors.white38, fontSize: 12),
                       ),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          if (!isSub)
+                            IconButton(
+                              icon: const Icon(Icons.add, color: Colors.white54),
+                              onPressed: () => _showDialog(parentId: cat['id'] as String),
+                              tooltip: 'Добавить подкатегорию',
+                            ),
                           IconButton(
                             icon: const Icon(Icons.edit_outlined, color: _accent),
                             onPressed: () => _showDialog(item: cat),
@@ -328,9 +388,9 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     );
   }
 
-  Widget _placeholder() => Container(
-    width: 56, height: 56,
+  Widget _placeholder([double size = 56]) => Container(
+    width: size, height: size,
     color: Colors.white10,
-    child: const Icon(Icons.category, color: Colors.white24, size: 28),
+    child: Icon(Icons.category, color: Colors.white24, size: size / 2),
   );
 }
