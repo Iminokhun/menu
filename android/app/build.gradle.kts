@@ -24,7 +24,8 @@ android {
         applicationId = "com.example.cafe_andalus_menu"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // 3D-просмотр блюд (model_viewer_plus) работает с Android 7.0
+        minSdk = maxOf(24, flutter.minSdkVersion)
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName

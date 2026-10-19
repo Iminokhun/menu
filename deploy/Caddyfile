@@ -1,0 +1,24 @@
+# Caddy сам получает и продлевает сертификат HTTPS для домена из .env.
+{$DOMAIN} {
+	# Сжатие ответов: меню и данные приходят гостю быстрее. Уже сжатые
+	# 3D-модели (Content-Encoding: gzip) Caddy повторно не сжимает
+	encode zstd gzip
+
+	# Больше 3D-модели (25 МБ) серверу присылать нечего
+	request_body {
+		max_size 30MB
+	}
+
+	header {
+		# Только HTTPS — браузер сам не пойдёт по незащищённому адресу
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	reverse_proxy menu:8090
+}
+
+# www.домен → домен
+www.{$DOMAIN} {
+	redir https://{$DOMAIN}{uri} permanent
+}

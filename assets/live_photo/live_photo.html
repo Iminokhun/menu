@@ -1,0 +1,256 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Живое фото</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0a0a0a; }
+  body { touch-action: none; -webkit-user-select: none; user-select: none; }
+  canvas { display: block; width: 100%; height: 100%; }
+  #msg {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: rgba(255,255,255,.6); font: 15px system-ui, sans-serif; text-align: center; padding: 24px;
+  }
+</style>
+<!-- Three.js лежит рядом, а не на CDN: страница работает и без интернета -->
+<script src="three.min.js"></script>
+</head>
+<body>
+<div id="msg">Загрузка…</div>
+<script>
+/*
+ * «Живое фото» (2.5D): одно обычное фото блюда наклоняется объёмно, когда
+ * гость ведёт пальцем или наклоняет телефон. Настоящей 3D-модели нет —
+ * сдвиг каждой точки зависит от карты глубины.
+ *
+ * Карту глубины считает нейросеть на сервере (server/tool/depth_maps.py)
+ * и кладёт рядом с фото: <фото>.depth.png, светлее — ближе. Если карты
+ * нет, она угадывается простым правилом (центр ближе краёв) — тогда
+ * объём слабее, середина просто «выпуклая».
+ *
+ * Запуск: live_photo.html?img=<адрес фото>&bg=<цвет фона без #>
+ * или из приложения: window.startLivePhoto(адрес, '#цвет').
+ */
+(function () {
+  const STRENGTH = 0.08;    // насколько далеко сдвигается ближний план
+  const DEPTH_SIZE = 384;   // разрешение карты глубины: чтобы фрикаделька не сливалась с соседней
+
+  const msg = document.getElementById('msg');
+  let started = false;
+
+  window.startLivePhoto = function (url, bg) {
+    if (started || !url) return;
+    started = true;
+    if (bg) document.body.style.background = bg;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';           // иначе WebGL не примет фото с сервера
+    img.onerror = () => { msg.textContent = 'Не удалось загрузить фото'; };
+    img.onload = () => {
+      // Карта глубины от нейросети, если сервер её уже посчитал
+      const depth = new Image();
+      depth.crossOrigin = 'anonymous';
+      depth.onload = () => { msg.remove(); run(img, bg || '#0a0a0a', depth); };
+      depth.onerror = () => { msg.remove(); run(img, bg || '#0a0a0a', null); };
+      depth.src = url + '.depth.png';
+    };
+    img.src = url;
+  };
+
+  // ------------------------------------------------------------ глубина
+  function buildDepth(img, depthImg) {
+    const aspect = img.width / img.height;
+    const w = aspect >= 1 ? DEPTH_SIZE : Math.round(DEPTH_SIZE * aspect);
+    const h = aspect >= 1 ? Math.round(DEPTH_SIZE / aspect) : DEPTH_SIZE;
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(depthImg || img, 0, 0, w, h);
+    const px = ctx.getImageData(0, 0, w, h);
+    const d = new Float32Array(w * h);
+    if (depthImg) {
+      // Готовая карта: светлее — ближе. Своё размытие почти не нужно
+      for (let i = 0; i < w * h; i++) d[i] = px.data[i * 4] / 255;
+      return { tex: toTexture(blur(d, w, h, 2, 2), w, h), focus: mean(d) };
+    }
+    const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        // эллипс по форме кадра: центр ближе всего
+        const nx = (x / (w - 1) - 0.5) * 2, ny = (y / (h - 1) - 0.5) * 2;
+        const r = Math.sqrt(nx * nx + ny * ny) / Math.SQRT2 * 1.25;
+        const radial = 1 - smooth(0.12, 0.85, r);
+        const lum = (0.299 * px.data[i * 4] + 0.587 * px.data[i * 4 + 1] + 0.114 * px.data[i * 4 + 2]) / 255;
+        d[i] = radial * (0.8 + 0.2 * lum);
+      }
+    }
+    // размытие убирает «рваные» края при сдвиге
+    return { tex: toTexture(blur(d, w, h, 4, 3), w, h), focus: 0.35 };
+  }
+
+  function mean(d) {
+    let s = 0;
+    for (let i = 0; i < d.length; i++) s += d[i];
+    return s / d.length;
+  }
+
+  function blur(d, w, h, passes, k) {
+    let a = d, b = new Float32Array(w * h);
+    for (let pass = 0; pass < passes; pass++) {
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        let s = 0, n = 0;
+        for (let j = -k; j <= k; j++) { const xx = x + j; if (xx >= 0 && xx < w) { s += a[y * w + xx]; n++; } }
+        b[y * w + x] = s / n;
+      }
+      const c = new Float32Array(w * h);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        let s = 0, n = 0;
+        for (let j = -k; j <= k; j++) { const yy = y + j; if (yy >= 0 && yy < h) { s += b[yy * w + x]; n++; } }
+        c[y * w + x] = s / n;
+      }
+      a = c;
+    }
+    return a;
+  }
+
+  function toTexture(a, w, h) {
+    const bytes = new Uint8Array(w * h * 4);
+    for (let i = 0; i < w * h; i++) {
+      const v = Math.round(a[i] * 255);
+      bytes[i * 4] = bytes[i * 4 + 1] = bytes[i * 4 + 2] = v; bytes[i * 4 + 3] = 255;
+    }
+    const tex = new THREE.DataTexture(bytes, w, h, THREE.RGBAFormat);
+    tex.flipY = true;
+    tex.magFilter = tex.minFilter = THREE.LinearFilter;
+    tex.needsUpdate = true;
+    return tex;
+  }
+
+  // ------------------------------------------------------------ сцена
+  function run(img, bg, depthImg) {
+    const depth = buildDepth(img, depthImg);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setClearColor(new THREE.Color(bg));
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 10);
+    camera.position.z = 1;
+
+    const photo = new THREE.Texture(img);
+    photo.magFilter = photo.minFilter = THREE.LinearFilter;
+    // Цвета фото выводятся как есть, без пересчёта цветовых пространств
+    photo.needsUpdate = true;
+
+    const uniforms = {
+      uPhoto: { value: photo },
+      uDepth: { value: depth.tex },
+      // Плоскость, которая стоит на месте: перед ней — выходит вперёд,
+      // за ней — уходит назад. Средняя глубина кадра — обычно тарелка
+      uFocus: { value: depth.focus },
+      uTilt: { value: new THREE.Vector2(0, 0) },
+      uStrength: { value: STRENGTH },
+    };
+    const material = new THREE.ShaderMaterial({
+      uniforms,
+      vertexShader: `
+        varying vec2 vUv;
+        void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `
+        uniform sampler2D uPhoto, uDepth;
+        uniform vec2 uTilt;
+        uniform float uStrength, uFocus;
+        varying vec2 vUv;
+        void main() {
+          // лёгкое увеличение прячет края кадра, открывающиеся при сдвиге
+          vec2 base = (vUv - 0.5) / 1.12 + 0.5;
+          // несколько шагов уточняют глубину в точке, куда смотрим
+          vec2 uv = base;
+          for (int i = 0; i < 4; i++) {
+            float d = texture2D(uDepth, uv).r;
+            uv = base + uTilt * (d - uFocus) * uStrength;
+          }
+          float d = texture2D(uDepth, uv).r;
+          vec4 c = texture2D(uPhoto, clamp(uv, 0.0, 1.0));
+          // ближний план чуть светлее — объём читается лучше
+          c.rgb *= 0.94 + 0.10 * d + 0.04 * d * dot(uTilt, vec2(-0.6, 0.8));
+          gl_FragColor = c;
+        }`,
+    });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+    scene.add(mesh);
+
+    // фото вписывается в экран целиком, без обрезки
+    function resize() {
+      const W = window.innerWidth, H = window.innerHeight;
+      renderer.setSize(W, H, false);
+      const screen = W / H, photoAspect = img.width / img.height;
+      camera.left = -screen; camera.right = screen; camera.top = 1; camera.bottom = -1;
+      camera.updateProjectionMatrix();
+      const fit = photoAspect > screen ? screen / photoAspect : 1; // по ширине или по высоте
+      mesh.scale.set(photoAspect * fit * 0.94, fit * 0.94, 1);
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // ---------------------------------------------------------- управление
+    const target = new THREE.Vector2(0, 0);
+    let lastInput = -1e9;
+    const now = () => performance.now();
+
+    function fromPointer(x, y) {
+      target.set((x / window.innerWidth - 0.5) * 2, -(y / window.innerHeight - 0.5) * 2);
+      lastInput = now();
+    }
+    window.addEventListener('pointermove', (e) => fromPointer(e.clientX, e.clientY));
+    window.addEventListener('pointerdown', (e) => { fromPointer(e.clientX, e.clientY); askMotion(); });
+
+    // наклон телефона: на iPhone разрешение спрашивается по первому касанию
+    let motionAsked = false;
+    function askMotion() {
+      if (motionAsked) return;
+      motionAsked = true;
+      const D = window.DeviceOrientationEvent;
+      if (D && typeof D.requestPermission === 'function') D.requestPermission().catch(() => {});
+    }
+    let rest = null;
+    window.addEventListener('deviceorientation', (e) => {
+      if (e.beta == null || e.gamma == null) return;
+      if (!rest) rest = { b: e.beta, g: e.gamma };       // как гость держит телефон сейчас
+      const clamp = (v) => Math.max(-1, Math.min(1, v));
+      target.set(clamp((e.gamma - rest.g) / 20), clamp((e.beta - rest.b) / 20));
+      lastInput = now();
+    });
+
+    // ?tilt=1,0 — застывший наклон, для проверки на снимках экрана
+    const fixed = new URLSearchParams(location.search).get('tilt');
+    if (fixed) {
+      const [fx, fy] = fixed.split(',').map(Number);
+      target.set(fx || 0, fy || 0);
+      lastInput = Infinity;
+    }
+
+    const tilt = uniforms.uTilt.value;
+    function frame(t) {
+      // никто не трогает — блюдо само слегка покачивается, видно, что оно «живое»
+      if (now() - lastInput > 2500) {
+        target.set(Math.sin(t / 1400) * 0.7, Math.cos(t / 1900) * 0.45);
+      }
+      // По диагонали наклон не сильнее, чем вбок: иначе сдвиг вырастает
+      // в 1,4 раза и у края тарелки проступает «двойной ободок»
+      if (target.length() > 1) target.normalize();
+      tilt.lerp(target, 0.08);
+      renderer.render(scene, camera);
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  const q = new URLSearchParams(location.search);
+  if (q.get('img')) window.startLivePhoto(q.get('img'), q.get('bg') ? '#' + q.get('bg') : null);
+})();
+</script>
+</body>
+</html>

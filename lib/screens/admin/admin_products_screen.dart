@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../api/api_client.dart';
+import '../../config/current_branch.dart';
 import '../../image_upload.dart';
 
 class AdminProductsScreen extends StatefulWidget {
@@ -11,7 +12,6 @@ class AdminProductsScreen extends StatefulWidget {
 }
 
 class _AdminProductsScreenState extends State<AdminProductsScreen> {
-  final _client = Supabase.instance.client;
   List<Map<String, dynamic>> _products = [];
   List<Map<String, dynamic>> _categories = [];
   String? _filterCategoryId;
@@ -24,22 +24,49 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
   @override
   void initState() {
     super.initState();
+    currentBranch.addListener(_reload);
+    _loadAll();
+  }
+
+  @override
+  void dispose() {
+    currentBranch.removeListener(_reload);
+    super.dispose();
+  }
+
+  /// Фильтр по категории сбрасывается: выбранная категория принадлежала
+  /// прежнему филиалу, и после переключения список оказался бы пустым
+  /// без видимой причины.
+  void _reload() {
+    _filterCategoryId = null;
     _loadAll();
   }
 
   Future<void> _loadAll() async {
+    final branch = currentBranch.value;
+    if (branch == null) {
+      setState(() {
+        _categories = [];
+        _products = [];
+        _loading = false;
+      });
+      return;
+    }
+
     setState(() => _loading = true);
     try {
       final results = await Future.wait([
-        _client.from('categories').select().order('sort_order'),
-        _client.from('products').select().order('sort_order'),
+        api.list('/api/admin/categories', {'branch_id': branch.id}),
+        api.list('/api/admin/products', {'branch_id': branch.id}),
       ]);
+      if (!mounted) return;
       setState(() {
         _categories = List<Map<String, dynamic>>.from(results[0]);
         _products = List<Map<String, dynamic>>.from(results[1]);
         _loading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => _loading = false);
       _toast('Ошибка загрузки: $e', isError: true);
     }
@@ -60,6 +87,15 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
       return await pickAndUploadImage('prod_');
     } catch (e) {
       _toast('Ошибка загрузки фото: $e', isError: true);
+      return null;
+    }
+  }
+
+  Future<String?> _uploadModel() async {
+    try {
+      return await pickAndUploadModel('model_');
+    } catch (e) {
+      _toast('Ошибка загрузки модели: $e', isError: true);
       return null;
     }
   }
@@ -86,6 +122,8 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
     String? selectedCatId = item?['category_id'] ?? (_categories.isNotEmpty ? _categories.first['id'] : null);
     bool isVisible = item?['is_visible'] ?? true;
     bool uploading = false;
+    String modelUrl = (item?['model_url'] as String?) ?? '';
+    bool uploadingModel = false;
 
     // Инициализация порций из jsonb
     final List<Map<String, dynamic>> portions = [];
@@ -251,7 +289,7 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                           Switch(
                             value: isVisible,
                             onChanged: (v) => setS(() => isVisible = v),
-                            activeColor: _accent,
+                            activeThumbColor: _accent,
                           ),
                         ],
                       ),
@@ -275,8 +313,12 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                       onPressed: uploading ? null : () async {
                         setS(() => uploading = true);
                         final url = await _uploadImage();
-                        if (url != null) setS(() => imageUrl = url);
-                        setS(() => uploading = false);
+                        // Окно могли закрыть, пока шла загрузка
+                        if (!ctx.mounted) return;
+                        setS(() {
+                          if (url != null) imageUrl = url;
+                          uploading = false;
+                        });
                       },
                       icon: uploading
                           ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: _accent))
@@ -288,20 +330,78 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                       style: OutlinedButton.styleFrom(side: const BorderSide(color: _accent)),
                     ),
                   ),
+                  const SizedBox(height: 20),
+
+                  // 3D-модель — необязательно
+                  _sectionLabel('3D-МОДЕЛЬ (.GLB)'),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Необязательно. Файл до 25 МБ — снимите блюдо со всех сторон '
+                    'приложением Polycam или KIRI Engine и сохраните как .glb. '
+                    'Гость сможет вращать блюдо и поставить его на стол через камеру.',
+                    style: TextStyle(color: Colors.white38, fontSize: 11),
+                  ),
+                  const SizedBox(height: 10),
+                  if (modelUrl.isNotEmpty) ...[
+                    Row(
+                      children: [
+                        const Icon(Icons.view_in_ar, color: Colors.greenAccent, size: 18),
+                        const SizedBox(width: 6),
+                        const Expanded(
+                          child: Text('Модель загружена',
+                              style: TextStyle(color: Colors.greenAccent, fontSize: 13)),
+                        ),
+                        TextButton(
+                          onPressed: uploadingModel ? null : () => setS(() => modelUrl = ''),
+                          child: const Text('Убрать', style: TextStyle(color: Colors.redAccent)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                  ],
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: uploadingModel ? null : () async {
+                        setS(() => uploadingModel = true);
+                        final url = await _uploadModel();
+                        if (!ctx.mounted) return;
+                        setS(() {
+                          if (url != null) modelUrl = url;
+                          uploadingModel = false;
+                        });
+                      },
+                      icon: uploadingModel
+                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: _accent))
+                          : const Icon(Icons.view_in_ar, color: _accent),
+                      label: Text(
+                        uploadingModel ? 'Загрузка...' : (modelUrl.isNotEmpty ? 'Заменить модель' : 'Загрузить модель'),
+                        style: const TextStyle(color: _accent),
+                      ),
+                      style: OutlinedButton.styleFrom(side: const BorderSide(color: _accent)),
+                    ),
+                  ),
                 ],
               ),
             ),
           ),
           actions: [
+            // Пока файл загружается, окно не закрываем и не сохраняем:
+            // иначе загруженное фото или модель молча потерялись бы
             TextButton(
-              onPressed: () => Navigator.pop(ctx),
+              onPressed: uploading || uploadingModel ? null : () => Navigator.pop(ctx),
               child: const Text('Отмена', style: TextStyle(color: Colors.grey)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: _accent, foregroundColor: Colors.black),
-              onPressed: () async {
+              onPressed: uploading || uploadingModel ? null : () async {
                 if (nameRu.text.trim().isEmpty || selectedCatId == null) {
                   _toast('Заполните обязательные поля', isError: true);
+                  return;
+                }
+                final branch = currentBranch.value;
+                if (branch == null) {
+                  _toast('Филиал не выбран', isError: true);
                   return;
                 }
                 final data = {
@@ -317,12 +417,16 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                   'is_visible': isVisible,
                   'portions': portions,
                   if (imageUrl != null && imageUrl!.isNotEmpty) 'image_url': imageUrl,
+                  // Пустая строка тоже уходит: так «Убрать» стирает модель
+                  'model_url': modelUrl,
                 };
                 try {
                   if (item == null) {
-                    await _client.from('products').insert(data);
+                    // Товар создаётся в текущем филиале. Категория в списке
+                    // выше — тоже его, так что составной ключ в базе сойдётся.
+                    await api.post('/api/admin/products', {...data, 'branch_id': branch.id});
                   } else {
-                    await _client.from('products').update(data).eq('id', item['id']);
+                    await api.patch('/api/admin/products/${item['id']}', data);
                   }
                   if (ctx.mounted) Navigator.pop(ctx);
                   _loadAll();
@@ -411,9 +515,13 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
       ),
     );
     if (confirm == true) {
-      await _client.from('products').delete().eq('id', item['id']);
-      _loadAll();
-      _toast('Товар удалён');
+      try {
+        await api.delete('/api/admin/products/${item['id']}');
+        _loadAll();
+        _toast('Товар удалён');
+      } catch (e) {
+        _toast('Ошибка: $e', isError: true);
+      }
     }
   }
 
@@ -542,6 +650,7 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                         [
                           _catName(p['category_id']),
                           if (portionsCount > 0) '$portionsCount пор.' else '${p['price']} сом',
+                          if ((p['model_url'] as String?)?.isNotEmpty == true) '3D',
                           if (isHidden) 'скрыт',
                         ].join('  ·  '),
                         style: const TextStyle(color: Colors.white38, fontSize: 12),

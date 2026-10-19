@@ -3,11 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import '../database.dart';
+import '../menu_store.dart';
 import '../models/product.dart';
 import '../theme/theme_config.dart';
 import '../theme/current_theme.dart';
+import '../widgets/motion.dart';
+import '../widgets/theme_background.dart';
 import '../widgets/product_card.dart';
+import 'search_screen.dart';
 import '../l10n/app_localizations.dart';
 import '../l10n/translation_service.dart';
 import '../widgets/lang_switcher.dart';
@@ -22,8 +25,6 @@ class MenuScreen extends StatefulWidget {
 }
 
 class _MenuScreenState extends State<MenuScreen> {
-  final DatabaseService _db = DatabaseService();
-
   // --- Данные ---
   List<Product> allProducts = [];
   List<Product> rootCategories = [];
@@ -38,12 +39,16 @@ class _MenuScreenState extends State<MenuScreen> {
   void initState() {
     super.initState();
     currentLocale.addListener(_rebuildOnLocaleChange);
+    // Меню уже загружено главным экраном — второй запрос к серверу не нужен.
+    // После «Обновить» список здесь тоже меняется.
+    menuStore.data.addListener(_loadLocalData);
     _loadLocalData();
   }
 
   @override
   void dispose() {
     currentLocale.removeListener(_rebuildOnLocaleChange);
+    menuStore.data.removeListener(_loadLocalData);
     super.dispose();
   }
 
@@ -53,9 +58,9 @@ class _MenuScreenState extends State<MenuScreen> {
 
   String _t(Product p) => p.localizedName(currentLocale.value.languageCode);
 
-  Future<void> _loadLocalData() async {
-    final data = await _db.getAllProducts();
-    if (data.isNotEmpty) _applyData(data);
+  void _loadLocalData() {
+    final items = menuStore.data.value?.items;
+    if (items != null && items.isNotEmpty) _applyData(List.of(items));
   }
 
   void _applyData(List<Product> data) {
@@ -73,11 +78,16 @@ class _MenuScreenState extends State<MenuScreen> {
 
       rootCategories.sort(compareByOrder);
 
-      if (widget.initialCategoryId != null &&
-          rootCategories.any((c) => c.id == widget.initialCategoryId)) {
-        selectedRootId = widget.initialCategoryId!;
-      } else if (selectedRootId.isEmpty && rootCategories.isNotEmpty) {
-        selectedRootId = rootCategories[0].id;
+      // После обновления меню гость остаётся в той категории, где был.
+      // Если её убрали — переходим на первую.
+      final stillThere = rootCategories.any((c) => c.id == selectedRootId);
+      if (!stillThere) {
+        final initial = widget.initialCategoryId;
+        selectedRootId = selectedRootId.isEmpty &&
+                initial != null &&
+                rootCategories.any((c) => c.id == initial)
+            ? initial
+            : (rootCategories.isNotEmpty ? rootCategories[0].id : '');
       }
 
       _onRootSelected(selectedRootId);
@@ -124,24 +134,10 @@ class _MenuScreenState extends State<MenuScreen> {
     });
   }
 
-  void _addToCart(Product p, Portion? portion, int quantity) {
-    final current = globalCart.value;
-    final index = current.indexWhere(
-      (i) => i.product.id == p.id && i.portion?.name == portion?.name,
-    );
 
-    List<CartItem> newCart;
-    if (index >= 0) {
-      current[index].quantity += quantity;
-      newCart = List.from(current);
-    } else {
-      newCart = [
-        ...current,
-        CartItem(product: p, portion: portion, quantity: quantity),
-      ];
-    }
-    globalCart.value = newCart;
-    HapticFeedback.lightImpact();
+  void _openSearch() {
+    HapticFeedback.selectionClick();
+    Navigator.push(context, MaterialPageRoute(builder: (_) => const SearchScreen()));
   }
 
   void _openCart() {
@@ -155,12 +151,9 @@ class _MenuScreenState extends State<MenuScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<AppThemeType>(
-      valueListenable: currentTheme,
-      builder: (context, type, child) {
-        final config = ThemeConfig.palettes[type]!;
-
-        // Removed unused variable 'isAccessibility'
+    return ValueListenableBuilder<ThemeConfig>(
+      valueListenable: appTheme,
+      builder: (context, config, child) {
 
         return Scaffold(
           backgroundColor: config.bg,
@@ -183,7 +176,7 @@ class _MenuScreenState extends State<MenuScreen> {
                 heroTag: 'fab_cart',
                 onPressed: _openCart,
                 backgroundColor: config.accent,
-                foregroundColor: Colors.black,
+                foregroundColor: config.onAccent,
                 elevation: 10,
                 icon: const Icon(Icons.shopping_basket),
                 label: Builder(builder: (ctx) {
@@ -202,6 +195,7 @@ class _MenuScreenState extends State<MenuScreen> {
                         style: const TextStyle(
                           fontWeight: FontWeight.w900,
                           fontSize: 18,
+                          fontFeatures: [FontFeature.tabularFigures()],
                         ),
                       ),
                     ],
@@ -214,18 +208,7 @@ class _MenuScreenState extends State<MenuScreen> {
           body: Stack(
             children: [
               // Фоновое изображение темы (если есть) или просто цвет
-              if (config.bgImage.isNotEmpty)
-                Positioned.fill(
-                  child: Image.network(
-                    config.bgImage,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const SizedBox(),
-                  ),
-                ),
-              // Затемнение фона
-              Positioned.fill(
-                child: Container(color: config.bgOverlay),
-              ),
+              Positioned.fill(child: ThemeBackground(config: config)),
 
               LayoutBuilder(
                 builder: (context, constraints) {
@@ -300,7 +283,13 @@ class _MenuScreenState extends State<MenuScreen> {
               onPressed: () => Navigator.pop(context),
               tooltip: "На главную",
             ),
-            const SizedBox(height: 30),
+            const SizedBox(height: 10),
+            IconButton(
+              icon: Icon(Icons.search_rounded, color: config.accent, size: 32),
+              onPressed: _openSearch,
+              tooltip: AppLocalizations.of(context).search,
+            ),
+            const SizedBox(height: 20),
             Expanded(
               child: ListView.separated(
                 padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -378,7 +367,7 @@ class _MenuScreenState extends State<MenuScreen> {
           Expanded(
             child: Text(
               title,
-              style: GoogleFonts.outfit(
+              style: config.titleStyle(
                 fontSize: 36,
                 fontWeight: FontWeight.w800,
                 color: config.text,
@@ -414,7 +403,7 @@ class _MenuScreenState extends State<MenuScreen> {
             Expanded(
               child: Text(
                  title,
-                style: GoogleFonts.outfit(
+                style: config.titleStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.w800,
                   color: config.text,
@@ -424,6 +413,11 @@ class _MenuScreenState extends State<MenuScreen> {
               ),
             ),
             const SizedBox(width: 8),
+            IconButton(
+              tooltip: l.search,
+              icon: Icon(Icons.search_rounded, color: config.accent, size: 26),
+              onPressed: _openSearch,
+            ),
             LangSwitcher(config: config),
           ],
         ),
@@ -522,17 +516,21 @@ class _MenuScreenState extends State<MenuScreen> {
         100, // padding for floating action button
       ),
       gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: isDesktop ? 260 : 300,
+        maxCrossAxisExtent: (isDesktop ? 260 : 300) * config.gridScale,
         childAspectRatio: isDesktop ? 0.65 : 0.7,
         crossAxisSpacing: isDesktop ? 25 : 15,
         mainAxisSpacing: isDesktop ? 25 : 15,
       ),
       physics: const BouncingScrollPhysics(),
       itemCount: currentGrid.length,
-      itemBuilder: (ctx, i) => LuxuryCard(
-        product: currentGrid[i],
-        config: config,
-        onAdd: _addToCart,
+      itemBuilder: (ctx, i) => FadeSlideIn(
+        key: ValueKey(currentGrid[i].id),
+        index: i,
+        child: LuxuryCard(
+          product: currentGrid[i],
+          config: config,
+          onAdd: addToCart,
+        ),
       ),
     );
   }
@@ -601,7 +599,7 @@ class _CartSheet extends StatelessWidget {
     return ValueListenableBuilder<Locale>(
       valueListenable: currentLocale,
       builder: (context, locale, child) {
-    final config = ThemeConfig.palettes[currentTheme.value]!;
+    final config = appTheme.value;
     final l = AppLocalizations.of(context);
 
     return ValueListenableBuilder<List<CartItem>>(
@@ -706,9 +704,9 @@ class _CartSheet extends StatelessWidget {
                                         alignment: Alignment.center,
                                         child: Text(
                                           "${item.quantity}x",
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontWeight: FontWeight.bold,
-                                            color: Colors.black,
+                                            color: config.onAccent,
                                           ),
                                         ),
                                       ),
@@ -745,6 +743,7 @@ class _CartSheet extends StatelessWidget {
                                           fontSize: 18,
                                           fontWeight: FontWeight.bold,
                                           color: config.text,
+                                          fontFeatures: const [FontFeature.tabularFigures()],
                                         ),
                                       ),
                                       IconButton(
@@ -796,6 +795,7 @@ class _CartSheet extends StatelessWidget {
                                   fontSize: 36,
                                   fontWeight: FontWeight.w900,
                                   color: config.accent,
+                                  fontFeatures: const [FontFeature.tabularFigures()],
                                 ),
                               ),
                             ],

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../api/api_client.dart';
+import '../../config/current_branch.dart';
 import '../../image_upload.dart';
 
 class AdminCategoriesScreen extends StatefulWidget {
@@ -11,7 +12,6 @@ class AdminCategoriesScreen extends StatefulWidget {
 }
 
 class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
-  final _client = Supabase.instance.client;
   List<Map<String, dynamic>> _categories = [];
   bool _loading = true;
 
@@ -22,18 +22,40 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
   @override
   void initState() {
     super.initState();
+    // Три экрана админки живут в IndexedStack одновременно, поэтому
+    // переключение филиала должно перезагружать каждый из них.
+    currentBranch.addListener(_reload);
     _load();
   }
 
+  @override
+  void dispose() {
+    currentBranch.removeListener(_reload);
+    super.dispose();
+  }
+
+  void _reload() => _load();
+
   Future<void> _load() async {
+    final branch = currentBranch.value;
+    if (branch == null) {
+      setState(() {
+        _categories = [];
+        _loading = false;
+      });
+      return;
+    }
+
     setState(() => _loading = true);
     try {
-      final data = await _client.from('categories').select().order('sort_order');
+      final data = await api.list('/api/admin/categories', {'branch_id': branch.id});
+      if (!mounted) return;
       setState(() {
         _categories = List<Map<String, dynamic>>.from(data);
         _loading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => _loading = false);
       _toast('Ошибка загрузки: $e', isError: true);
     }
@@ -105,8 +127,12 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                       onPressed: uploading ? null : () async {
                         setDialogState(() => uploading = true);
                         final url = await _uploadImage();
-                        if (url != null) setDialogState(() => imageUrl = url);
-                        setDialogState(() => uploading = false);
+                        // Окно могли закрыть, пока шла загрузка
+                        if (!ctx.mounted) return;
+                        setDialogState(() {
+                          if (url != null) imageUrl = url;
+                          uploading = false;
+                        });
                       },
                       icon: uploading
                           ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: _accent))
@@ -123,15 +149,21 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
             ),
           ),
           actions: [
+            // Пока фото загружается, окно не закрываем и не сохраняем
             TextButton(
-              onPressed: () => Navigator.pop(ctx),
+              onPressed: uploading ? null : () => Navigator.pop(ctx),
               child: const Text('Отмена', style: TextStyle(color: Colors.grey)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: _accent, foregroundColor: Colors.black),
-              onPressed: () async {
+              onPressed: uploading ? null : () async {
                 if (nameRu.text.trim().isEmpty) {
                   _toast('Введите название (RU)', isError: true);
+                  return;
+                }
+                final branch = currentBranch.value;
+                if (branch == null) {
+                  _toast('Филиал не выбран', isError: true);
                   return;
                 }
                 final data = {
@@ -143,9 +175,13 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                 };
                 try {
                   if (item == null) {
-                    await _client.from('categories').insert(data);
+                    // Новая категория принадлежит текущему филиалу.
+                    // При обновлении branch_id не меняем: переносить
+                    // категорию между филиалами значило бы тащить за ней
+                    // все товары, и составной ключ в базе это запретит.
+                    await api.post('/api/admin/categories', {...data, 'branch_id': branch.id});
                   } else {
-                    await _client.from('categories').update(data).eq('id', item['id']);
+                    await api.patch('/api/admin/categories/${item['id']}', data);
                   }
                   if (ctx.mounted) Navigator.pop(ctx);
                   _load();
@@ -187,9 +223,13 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
       ),
     );
     if (confirm == true) {
-      await _client.from('categories').delete().eq('id', item['id']);
-      _load();
-      _toast('Категория удалена');
+      try {
+        await api.delete('/api/admin/categories/${item['id']}');
+        _load();
+        _toast('Категория удалена');
+      } catch (e) {
+        _toast('Ошибка: $e', isError: true);
+      }
     }
   }
 

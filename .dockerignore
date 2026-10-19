@@ -1,0 +1,19 @@
+# В образ попадает только исходный код — без сборок, кэшей и данных
+**/build/
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.idea/
+**/.vscode/
+android/
+ios/
+windows/
+linux/
+macos/
+test/
+server/data/
+deploy/data/
+deploy/backups/
+deploy/.env
+*.apk
+*.log

@@ -1,0 +1,21 @@
+name: menu_server
+description: API-сервер SaaS-меню на SQLite.
+publish_to: 'none'
+version: 1.0.0
+
+environment:
+  sdk: '>=3.10.0 <4.0.0'
+
+dependencies:
+  shelf: ^1.4.0
+  shelf_router: ^1.1.0
+  shelf_static: ^1.1.0
+  sqlite3: ^3.0.0
+  crypto: ^3.0.0
+  mime: ^2.0.0
+  http: ^1.2.0
+  http_parser: ^4.0.0
+  image: ^4.12.0
+
+dev_dependencies:
+  lints: ^5.0.0

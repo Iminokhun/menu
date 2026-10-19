@@ -44,8 +44,9 @@ class LangSwitcher extends StatelessWidget {
                       fontSize: 13,
                       fontWeight: FontWeight.w800,
                       letterSpacing: 0.5,
+                      // на тёмном фирменном цвете — белым, на светлом — чёрным
                       color: isActive
-                          ? Colors.black
+                          ? config.onAccent
                           : config.text.withValues(alpha: 0.5),
                     ),
                   ),

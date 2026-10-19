@@ -1,0 +1,6 @@
+# Файлы для Linux-сервера — всегда с LF, иначе скрипты там не запустятся
+*.sh text eol=lf
+Dockerfile text eol=lf
+Caddyfile text eol=lf
+*.conf text eol=lf
+.env.example text eol=lf

@@ -1,4 +1,7 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+
+import 'json_read.dart';
 
 class Portion {
   final String name;
@@ -6,7 +9,7 @@ class Portion {
   Portion({required this.name, required this.price});
 
   factory Portion.fromJson(Map<String, dynamic> json) =>
-      Portion(name: json['name'] ?? '', price: (json['price'] ?? 0).toDouble());
+      Portion(name: jsonStr(json['name']), price: jsonDouble(json['price']));
   Map<String, dynamic> toJson() => {'name': name, 'price': price};
 }
 
@@ -21,6 +24,9 @@ class Product {
   final String descTr;
   final double price;
   final String imageUrl;
+
+  /// 3D-модель блюда (.glb). Пустая — у блюда только фото.
+  final String modelUrl;
   final bool isGroup;
   final List<Portion> portions;
   final int sortOrder;
@@ -36,10 +42,49 @@ class Product {
     this.descTr = '',
     this.price = 0,
     this.imageUrl = '',
+    this.modelUrl = '',
     this.isGroup = false,
     this.portions = const [],
     this.sortOrder = 0,
   });
+
+  /// Категория из ответа сервера: `parentId` — родительская категория.
+  factory Product.categoryFromJson(Map<String, dynamic> json) => Product(
+        id: json['id'] as String,
+        parentId: jsonStr(json['parent_id']),
+        name: jsonStr(json['name']),
+        nameEn: jsonStr(json['name_en']),
+        nameTr: jsonStr(json['name_tr']),
+        imageUrl: jsonStr(json['image_url']),
+        isGroup: true,
+        sortOrder: jsonInt(json['sort_order']),
+      );
+
+  /// Блюдо из ответа сервера: `parentId` — его категория. Порция
+  /// неожиданного вида пропускается, остальные остаются.
+  factory Product.dishFromJson(Map<String, dynamic> json) {
+    final raw = json['portions'];
+    return Product(
+      id: json['id'] as String,
+      parentId: jsonStr(json['category_id']),
+      name: jsonStr(json['name']),
+      nameEn: jsonStr(json['name_en']),
+      nameTr: jsonStr(json['name_tr']),
+      description: jsonStr(json['description']),
+      descEn: jsonStr(json['desc_en']),
+      descTr: jsonStr(json['desc_tr']),
+      price: jsonDouble(json['price']),
+      imageUrl: jsonStr(json['image_url']),
+      modelUrl: jsonStr(json['model_url']),
+      isGroup: false,
+      portions: [
+        if (raw is List)
+          for (final p in raw)
+            if (p is Map<String, dynamic>) Portion.fromJson(p),
+      ],
+      sortOrder: jsonInt(json['sort_order']),
+    );
+  }
 
   /// Локализованное название товара/категории
   String localizedName(String langCode) {
@@ -54,31 +99,6 @@ class Product {
     if (langCode == 'tr' && descTr.isNotEmpty) return descTr;
     return description;
   }
-
-  factory Product.fromSupabase(Map<String, dynamic> json) {
-    var pList = <Portion>[];
-    final portionsJson = json['portions'];
-    if (portionsJson != null && portionsJson is List) {
-      for (var v in portionsJson) {
-        pList.add(Portion.fromJson(v as Map<String, dynamic>));
-      }
-    }
-    return Product(
-      id: json['id'] ?? '',
-      parentId: json['parent_id'] ?? '',
-      name: json['name'] ?? 'Без названия',
-      nameEn: json['name_en'] ?? '',
-      nameTr: json['name_tr'] ?? '',
-      description: json['description'] ?? '',
-      descEn: json['desc_en'] ?? '',
-      descTr: json['desc_tr'] ?? '',
-      price: (json['price'] ?? 0).toDouble(),
-      imageUrl: json['image_url'] ?? '',
-      isGroup: json['is_group'] ?? false,
-      portions: pList,
-      sortOrder: json['sort_order'] ?? 0,
-    );
-  }
 }
 
 class CartItem {
@@ -87,12 +107,29 @@ class CartItem {
   int quantity;
   CartItem({required this.product, this.portion, this.quantity = 1});
   double get price => portion?.price ?? product.price;
-  String get name =>
-      portion != null ? "${product.name} [${portion!.name}]" : product.name;
 }
 
 // Глобальная корзина
 final ValueNotifier<List<CartItem>> globalCart = ValueNotifier([]);
+
+/// Добавить блюдо в корзину — из меню и из поиска одинаково.
+/// Та же порция того же блюда не дублируется, а прибавляется к количеству.
+void addToCart(Product p, Portion? portion, int quantity) {
+  final current = globalCart.value;
+  final index = current.indexWhere(
+    (i) => i.product.id == p.id && i.portion?.name == portion?.name,
+  );
+  if (index >= 0) {
+    current[index].quantity += quantity;
+    globalCart.value = List.from(current);
+  } else {
+    globalCart.value = [
+      ...current,
+      CartItem(product: p, portion: portion, quantity: quantity),
+    ];
+  }
+  HapticFeedback.lightImpact();
+}
 
 /// Единый порядок для категорий и товаров: сначала поле «Порядок» из админки,
 /// при равных значениях — по алфавиту (у новых записей sort_order = 0).

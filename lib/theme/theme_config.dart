@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+
+import '../models/branch.dart';
 
 enum AppThemeType { midnight, porcelain, royal, sea, sakura, highContrast }
 
@@ -14,6 +17,15 @@ class ThemeConfig {
   final Brightness brightness;
   final bool isHighContrast;
 
+  /// Множитель скругления углов карточек (острые / мягкие / круглые)
+  final double cornerScale;
+
+  /// Множитель размера карточек в сетке (мелкие / обычные / крупные)
+  final double gridScale;
+
+  /// Шрифт названий: classic, montserrat, playfair, oswald, lora
+  final String titleFont;
+
   ThemeConfig({
     required this.name,
     required this.bg,
@@ -25,14 +37,126 @@ class ThemeConfig {
     required this.text,
     required this.brightness,
     this.isHighContrast = false,
+    this.cornerScale = 1,
+    this.gridScale = 1,
+    this.titleFont = 'classic',
   });
+
+  /// Цвет текста и значков на фирменном цвете: на тёмно-синей кнопке
+  /// чёрная надпись не читается, на жёлтой — белая
+  Color get onAccent => accent.computeLuminance() > 0.45 ? Colors.black : Colors.white;
+
+  /// Скругление с учётом выбора кафе: [base] — как было задумано в макете
+  double radius(double base) => base * cornerScale;
+
+  /// Заголовки: название кафе, категории
+  TextStyle titleStyle({
+    double? fontSize,
+    FontWeight? fontWeight,
+    Color? color,
+    double? letterSpacing,
+    double? height,
+  }) =>
+      _font(titleFont == 'classic' ? 'Outfit' : null, fontSize, fontWeight, color, letterSpacing, height);
+
+  /// Названия блюд — в классическом варианте антиквой, как было
+  TextStyle dishTitleStyle({
+    double? fontSize,
+    FontWeight? fontWeight,
+    Color? color,
+    double? height,
+  }) =>
+      _font(titleFont == 'classic' ? 'Cormorant Garamond' : null, fontSize, fontWeight, color, null, height);
+
+  static const fontFamilies = {
+    'montserrat': 'Montserrat',
+    'playfair': 'Playfair Display',
+    'oswald': 'Oswald',
+    'lora': 'Lora',
+  };
+
+  TextStyle _font(String? classic, double? size, FontWeight? weight, Color? color,
+      double? spacing, double? height) {
+    final family = classic ?? fontFamilies[titleFont] ?? 'Outfit';
+    return GoogleFonts.getFont(
+      family,
+      fontSize: size,
+      fontWeight: weight,
+      color: color,
+      letterSpacing: spacing,
+      height: height,
+    );
+  }
+
+  ThemeConfig copyWith({
+    Color? bgOverlay,
+    String? bgImage,
+    Color? accent,
+    double? cornerScale,
+    double? gridScale,
+    String? titleFont,
+  }) =>
+      ThemeConfig(
+        name: name,
+        bg: bg,
+        bgOverlay: bgOverlay ?? this.bgOverlay,
+        bgImage: bgImage ?? this.bgImage,
+        surface: surface,
+        glass: glass,
+        accent: accent ?? this.accent,
+        text: text,
+        brightness: brightness,
+        isHighContrast: isHighContrast,
+        cornerScale: cornerScale ?? this.cornerScale,
+        gridScale: gridScale ?? this.gridScale,
+        titleFont: titleFont ?? this.titleFont,
+      );
+
+  /// Тема меню по настройкам кафе: палитра выбранной темы, поверх — свой
+  /// цвет, фон, углы, размер карточек и шрифт. Пустые поля — как в теме.
+  static ThemeConfig forStyle(BranchStyle s) {
+    final type = AppThemeType.values.firstWhere(
+      (t) => t.name == s.theme,
+      orElse: () => AppThemeType.midnight,
+    );
+    final base = palettes[type]!;
+
+    // В контрастной теме жёлтый оставляем: она для тех, кто плохо видит
+    final accent = base.isHighContrast ? null : parseHexColor(s.accent);
+
+    String? bgImage;
+    Color? overlay;
+    if (s.bgUrl == 'none') {
+      bgImage = ''; // однотонный фон
+    } else if (s.bgUrl.isNotEmpty && !base.isHighContrast) {
+      bgImage = s.bgUrl;
+      // своё фото приглушаем, чтобы на нём читались карточки
+      overlay = base.bg.withValues(alpha: 0.78);
+    }
+
+    return base.copyWith(
+      accent: accent,
+      bgImage: bgImage,
+      bgOverlay: overlay,
+      cornerScale: const {'sharp': 0.35, 'round': 1.4}[s.corners] ?? 1,
+      gridScale: const {'small': 0.8, 'large': 1.25}[s.cardSize] ?? 1,
+      titleFont: fontFamilies.containsKey(s.titleFont) ? s.titleFont : 'classic',
+    );
+  }
+
+  /// `#RRGGBB` → цвет; что угодно другое → null
+  static Color? parseHexColor(String hex) {
+    final m = RegExp(r'^#([0-9a-fA-F]{6})$').firstMatch(hex);
+    return m == null ? null : Color(0xFF000000 | int.parse(m.group(1)!, radix: 16));
+  }
 
   static Map<AppThemeType, ThemeConfig> palettes = {
     AppThemeType.midnight: ThemeConfig(
       name: "MIDNIGHT",
       bg: const Color(0xFF000000),
-      bgImage:
-          "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop",
+      // Фон лежит в самом приложении: виден без интернета и не зависит
+      // от чужого сайта (раньше грузился с Unsplash)
+      bgImage: "assets/backgrounds/midnight.jpg",
       bgOverlay: Colors.black.withValues(alpha: 0.8),
       surface: const Color(0xFF1E1E1E),
       glass: const Color(0xFF121212).withValues(alpha: 0.85),
@@ -43,9 +167,10 @@ class ThemeConfig {
     AppThemeType.porcelain: ThemeConfig(
       name: "PORCELAIN",
       bg: const Color(0xFFF2F2F7),
-      bgImage:
-          "https://images.unsplash.com/photo-1590664216212-65e7004a7c0f?q=80&w=2574&auto=format&fit=crop",
-      bgOverlay: Colors.white.withValues(alpha: 0.9),
+      // Свой мягкий светлый фон: картинку с Unsplash, которая была здесь,
+      // там уже удалили. Она и так светлая, поэтому дымка слабее
+      bgImage: "assets/backgrounds/porcelain.jpg",
+      bgOverlay: Colors.white.withValues(alpha: 0.35),
       surface: const Color(0xFFFFFFFF),
       glass: const Color(0xFFFFFFFF).withValues(alpha: 0.9),
       accent: const Color(0xFF8B5A2B),

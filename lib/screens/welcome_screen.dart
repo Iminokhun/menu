@@ -3,7 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../widgets/auth_image.dart';
+import '../widgets/motion.dart';
+import '../widgets/theme_background.dart';
+import '../config/current_branch.dart';
 import '../database.dart';
+import '../menu_store.dart';
+import '../models/branch.dart';
 import '../models/product.dart';
 import '../theme/theme_config.dart';
 import '../theme/current_theme.dart';
@@ -12,9 +17,10 @@ import '../l10n/translation_service.dart';
 import '../widgets/lang_switcher.dart';
 import '../responsive.dart';
 import 'menu_screen.dart';
+import 'search_screen.dart';
 import 'admin/admin_shell.dart';
-// ignore: unused_import
-import 'about_screen.dart';
+import '../api/api_client.dart';
+import '../widgets/admin_login_dialog.dart';
 
 class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key});
@@ -28,23 +34,33 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
   List<Product> rootCategories = [];
 
-  bool isLoading = true;
-  bool _isRebooting = false;
+  /// Меню ещё не получено ни с сервера, ни из сохранённой копии
+  bool get isLoading => menuStore.data.value == null;
   bool _isNavigating = false;
 
-  String shopLogoUrl = '';
-  String shopQrUrl = '';
-  String shopName = '';
-  String shopSlogan = '';
-  String shopPhone = '';
+  // Данные заведения живут в филиале, а не в отдельном состоянии экрана:
+  // переключили филиал в админке — здесь сразу новые название и логотип.
+  String get shopLogoUrl => currentBranch.value?.logoUrl ?? '';
+  String get shopQrUrl => currentBranch.value?.qrUrl ?? '';
+  String get shopName => currentBranch.value?.name ?? 'CAFE ANDALUS';
+  String get shopSlogan => currentBranch.value?.slogan ?? 'Добро пожаловать';
 
   @override
   void initState() {
     super.initState();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     currentLocale.addListener(_rebuildOnLocaleChange);
-    _loadFromSupabase();
+    currentBranch.addListener(_onBranchChanged);
+    menuStore.data.addListener(_applyMenu);
+    menuStore.refreshing.addListener(_rebuild);
+    // Первый расчёт — без setState: экран ещё строится
+    _applyMenu();
+    _onBranchChanged();
+    _initialized = true;
   }
+
+  /// До конца initState перестраивать экран нельзя и не нужно
+  bool _initialized = false;
 
   @override
   void didChangeDependencies() {
@@ -66,43 +82,56 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   @override
   void dispose() {
     currentLocale.removeListener(_rebuildOnLocaleChange);
+    currentBranch.removeListener(_onBranchChanged);
+    menuStore.data.removeListener(_applyMenu);
+    menuStore.refreshing.removeListener(_rebuild);
     super.dispose();
   }
 
-  void _rebuildOnLocaleChange() {
-    if (mounted) setState(() {});
+  void _rebuildOnLocaleChange() => _rebuild();
+
+  void _rebuild() {
+    if (mounted && _initialized) setState(() {});
   }
 
-  Future<void> _loadFromSupabase() async {
-    setState(() => isLoading = true);
-    try {
-      final info = await _db.getShopInfo();
-      final products = await _db.getAllProducts();
+  /// Филиал меняется, когда его переключили в админке. Меню нужно
+  /// перезагрузить целиком: у другого филиала другие категории.
+  void _onBranchChanged() {
+    final branch = currentBranch.value;
+    if (branch != null && branch.slug != menuStore.slug) {
+      menuStore.open(branch.slug);
+    }
+    _rebuild();
+  }
 
-      if (mounted) {
-        setState(() {
-          shopLogoUrl = info['logo_url'] ?? '';
-          shopQrUrl = info['qr_url'] ?? '';
-          shopName = (info['name']?.isEmpty ?? true) ? 'CAFE ANDALUS' : info['name']!;
-          shopSlogan = (info['slogan']?.isEmpty ?? true) ? 'Добро пожаловать' : info['slogan']!;
-          shopPhone = info['phone'] ?? '';
+  /// Категории верхнего уровня из текущего меню — свежего или сохранённого.
+  void _applyMenu() {
+    final items = menuStore.data.value?.items ?? const <Product>[];
+    final allGroupIds = items.where((p) => p.isGroup).map((e) => e.id).toSet();
+    // Список пересобирается с нуля, а не дополняется: при смене
+    // филиала иначе остались бы категории прежнего.
+    rootCategories = items.where((p) {
+      if (!p.isGroup) return false;
+      return p.parentId.isEmpty || !allGroupIds.contains(p.parentId);
+    }).toList()
+      ..sort(compareByOrder);
+    _rebuild();
+  }
 
-          if (products.isNotEmpty) {
-            final allGroupIds = products.where((p) => p.isGroup).map((e) => e.id).toSet();
-            rootCategories = products.where((p) {
-              if (!p.isGroup) return false;
-              return p.parentId.isEmpty || !allGroupIds.contains(p.parentId);
-            }).toList();
-            rootCategories.sort(compareByOrder);
-          }
-          isLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => isLoading = false);
-        _showToast('Ошибка загрузки: $e', isError: true);
-      }
+  /// Кнопка «Обновить»: один раз берёт свежее меню с сервера.
+  Future<void> _refreshMenu() async {
+    HapticFeedback.selectionClick();
+    final result = await menuStore.refresh();
+    switch (result) {
+      case MenuResult.fresh:
+        _showToast('Меню обновлено');
+      case MenuResult.offline:
+        _showToast('Нет связи, показано сохранённое меню', isError: true);
+      case MenuResult.offlineNoCache:
+        _showToast('Нет связи с сервером', isError: true);
+      case MenuResult.notFound:
+      case MenuResult.unpaid:
+        break; // main.dart сам покажет выбор филиала или «Меню недоступно»
     }
   }
 
@@ -135,182 +164,60 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     if (mounted) setState(() => _isNavigating = false);
   }
 
-  void _showAdminPin() {
-    final pinCtrl = TextEditingController();
-    String? errorText;
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS) {
-          void tryEnter() {
-            if (pinCtrl.text.trim() == '200229') {
-              Navigator.pop(ctx);
-              if (!mounted) return;
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminShell()))
-                  .then((_) => _loadFromSupabase());
-            } else {
-              setS(() => errorText = 'Неверный PIN-код');
-            }
-          }
-
-          return AlertDialog(
-            backgroundColor: const Color(0xFF1A1A1A),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: const Row(
-              children: [
-                Icon(Icons.admin_panel_settings, color: Color(0xFFD4AF37), size: 20),
-                SizedBox(width: 8),
-                Text('Режим администратора', style: TextStyle(color: Colors.white, fontSize: 16)),
-              ],
-            ),
-            content: SizedBox(
-              width: 320,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: pinCtrl,
-                    obscureText: true,
-                    keyboardType: TextInputType.number,
-                    maxLength: 6,
-                    autofocus: true,
-                    style: const TextStyle(color: Colors.white, fontSize: 24, letterSpacing: 8),
-                    textAlign: TextAlign.center,
-                    onChanged: (_) {
-                      if (errorText != null) setS(() => errorText = null);
-                    },
-                    onSubmitted: (_) => tryEnter(),
-                    decoration: const InputDecoration(
-                      hintText: '• • • • • •',
-                      hintStyle: TextStyle(color: Colors.white24),
-                      counterText: '',
-                      enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
-                      focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFFD4AF37))),
-                    ),
-                  ),
-                  if (errorText != null) ...[
-                    const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.error_outline, color: Colors.redAccent, size: 16),
-                        const SizedBox(width: 6),
-                        Text(
-                          errorText!,
-                          style: const TextStyle(color: Colors.redAccent, fontSize: 13),
-                        ),
-                      ],
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Отмена', style: TextStyle(color: Colors.grey)),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD4AF37), foregroundColor: Colors.black),
-                onPressed: tryEnter,
-                child: const Text('Войти', style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
-            ],
-          );
-        },
-      ),
-    );
+  /// Вход в админку.
+  ///
+  /// Логин и пароль выдаёт главный администратор платформы. Пароль
+  /// спрашивается при каждом входе: планшет стоит в зале, и сохранённая
+  /// сессия означала бы, что админку откроет любой, кто до него дотянулся.
+  /// Поэтому токен живёт только в памяти и сбрасывается сразу после
+  /// выхода из админки.
+  Future<void> _openAdmin() async {
+    final me = await showAdminLogin(context);
+    if (me != null && mounted) _pushAdmin();
   }
 
-  void _changeTheme(AppThemeType type) async {
-    Navigator.pop(context);
-    setState(() => _isRebooting = true);
-    await Future.delayed(const Duration(milliseconds: 300));
-    currentTheme.value = type;
-    await Future.delayed(const Duration(milliseconds: 1000));
-    if (mounted) setState(() => _isRebooting = false);
-  }
-
-  void _showThemePicker() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        return Container(
-          padding: const EdgeInsets.all(30),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
-          ),
-          child: Wrap(
-            spacing: 15,
-            runSpacing: 15,
-            alignment: WrapAlignment.center,
-            children: AppThemeType.values
-                .where((t) => t != AppThemeType.highContrast)
-                .map((type) {
-                  final theme = ThemeConfig.palettes[type]!;
-                  return ChoiceChip(
-                    label: Text(theme.name),
-                    selected: currentTheme.value == type,
-                    onSelected: (v) => _changeTheme(type),
-                    selectedColor: theme.accent,
-                    backgroundColor: Colors.grey,
-                    labelStyle: TextStyle(
-                      color: currentTheme.value == type ? Colors.black : Colors.grey,
-                    ),
-                  );
-                })
-                .toList(),
-          ),
-        );
-      },
+  Future<void> _pushAdmin() async {
+    // Планшет мог показывать филиал другого кафе: тогда админка открылась
+    // бы на чужом меню, и сервер отказал бы в каждом запросе. Переводим
+    // на первый филиал своего кафе.
+    final List<Branch> own;
+    try {
+      own = await _db.getBranches();
+    } catch (e) {
+      // Без списка своих филиалов нельзя проверить, что админка откроется
+      // на своём, а не на чужом меню
+      await api.logout();
+      _showToast('$e', isError: true);
+      return;
+    }
+    if (!mounted) return;
+    if (own.isNotEmpty && !own.any((b) => b.id == currentBranch.value?.id)) {
+      await saveBranchSlug(own.first.slug);
+      currentBranch.value = own.first;
+    }
+    if (!mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AdminShell()),
     );
-  }
 
-  Widget _buildLoadingOverlay() {
-    if (!_isRebooting) return const SizedBox.shrink();
-    final l = AppLocalizations.of(context);
-    return Container(
-      color: Colors.black.withValues(alpha: 0.85),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const CircularProgressIndicator(color: Colors.white),
-            const SizedBox(height: 20),
-            Text(
-              l.applyingTheme,
-              style: const TextStyle(color: Colors.white, fontSize: 18),
-            ),
-          ],
-        ),
-      ),
-    );
+    await api.logout();
+    // Блюда, добавленные в админке, сразу видны гостю
+    if (mounted) menuStore.refresh();
   }
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<AppThemeType>(
-      valueListenable: currentTheme,
-      builder: (context, themeType, child) {
-        final config = ThemeConfig.palettes[themeType]!;
+    return ValueListenableBuilder<ThemeConfig>(
+      valueListenable: appTheme,
+      builder: (context, config, child) {
 
         return Scaffold(
           backgroundColor: config.bg,
           resizeToAvoidBottomInset: false,
           body: Stack(
             children: [
-              if (config.bgImage.isNotEmpty)
-                Positioned.fill(
-                  child: Image.network(
-                    config.bgImage,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const SizedBox(),
-                  ),
-                ),
-              Positioned.fill(child: Container(color: config.bgOverlay)),
+              Positioned.fill(child: ThemeBackground(config: config)),
 
               LayoutBuilder(
                 builder: (context, constraints) {
@@ -338,18 +245,91 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                           ),
                           sliver: _buildMainContentSliver(config),
                         ),
-                        SliverToBoxAdapter(child: const SizedBox(height: 50)),
+                        const SliverToBoxAdapter(child: SizedBox(height: 50)),
                       ],
                     );
                   }
                 },
               ),
 
-              _buildLoadingOverlay(),
             ],
           ),
         );
       },
+    );
+  }
+
+  Widget _searchButton(ThemeConfig config) {
+    return IconButton(
+      tooltip: AppLocalizations.of(context).search,
+      onPressed: isLoading ? null : _openSearch,
+      icon: Icon(Icons.search_rounded, color: config.accent),
+    );
+  }
+
+  void _openSearch() {
+    HapticFeedback.selectionClick();
+    Navigator.push(context, MaterialPageRoute(builder: (_) => const SearchScreen()));
+  }
+
+  /// Сколько категорий в ряд — по размеру карточек, выбранному кафе
+  int _categoryColumns(ThemeConfig config, {required bool desktop}) {
+    final columns = desktop ? 3 : 2;
+    if (config.gridScale < 1) return columns + 1; // мелкие
+    if (config.gridScale > 1) return columns - 1; // крупные
+    return columns;
+  }
+
+  Widget _refreshButton(ThemeConfig config) {
+    final busy = menuStore.refreshing.value;
+    return IconButton(
+      tooltip: 'Обновить меню',
+      onPressed: busy ? null : _refreshMenu,
+      // Значок и индикатор сменяют друг друга плавно, без «мигания»
+      icon: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 180),
+        transitionBuilder: (child, anim) => FadeTransition(
+          opacity: anim,
+          child: ScaleTransition(scale: Tween(begin: 0.6, end: 1.0).animate(anim), child: child),
+        ),
+        child: busy
+            ? SizedBox(
+                key: const ValueKey('busy'),
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2, color: config.accent),
+              )
+            : Icon(
+                Icons.refresh_rounded,
+                key: const ValueKey('idle'),
+                color: config.text.withValues(alpha: 0.5),
+              ),
+      ),
+    );
+  }
+
+  /// Показано сохранённое меню — гость и персонал видят, от какого оно числа.
+  Widget _offlineNote(ThemeConfig config) {
+    final menu = menuStore.data.value;
+    if (menu == null || !menu.fromCache) return const SizedBox.shrink();
+    final t = menu.savedAt;
+    String two(int n) => n.toString().padLeft(2, '0');
+    final when = '${two(t.day)}.${two(t.month)}, ${two(t.hour)}:${two(t.minute)}';
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.wifi_off_rounded, size: 14, color: Colors.orangeAccent.withValues(alpha: 0.9)),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              'Нет связи — меню от $when',
+              style: GoogleFonts.manrope(fontSize: 12, color: Colors.orangeAccent),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -389,7 +369,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               ],
             ),
             child: GestureDetector(
-              onLongPress: _showAdminPin,
+              onLongPress: _openAdmin,
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(100),
                 child: AuthImage(
@@ -404,17 +384,14 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
           const SizedBox(height: 30),
 
-          GestureDetector(
-            onLongPress: _showThemePicker,
-            child: Text(
-              shopName,
-              textAlign: TextAlign.center,
-              style: GoogleFonts.outfit(
-                fontSize: 36,
-                fontWeight: FontWeight.w800,
-                color: config.text,
-                height: 1.1,
-              ),
+          Text(
+            shopName,
+            textAlign: TextAlign.center,
+            style: config.titleStyle(
+              fontSize: 36,
+              fontWeight: FontWeight.w800,
+              color: config.text,
+              height: 1.1,
             ),
           ),
           const SizedBox(height: 10),
@@ -431,7 +408,19 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
           ),
 
           const SizedBox(height: 20),
-          LangSwitcher(config: config),
+          // Wrap, а не Row: в узкой боковой панели кнопки переносятся на
+          // вторую строку, а не вылезают за край
+          Wrap(
+            alignment: WrapAlignment.center,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 4,
+            children: [
+              LangSwitcher(config: config),
+              _searchButton(config),
+              _refreshButton(config),
+            ],
+          ),
+          _offlineNote(config),
 
           const Spacer(),
 
@@ -510,16 +499,13 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    GestureDetector(
-                      onLongPress: _showThemePicker,
-                      child: Text(
-                        shopName,
-                        style: GoogleFonts.outfit(
-                          fontSize: 28,
-                          fontWeight: FontWeight.w800,
-                          color: config.text,
-                          height: 1.1,
-                        ),
+                    Text(
+                      shopName,
+                      style: config.titleStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
+                        color: config.text,
+                        height: 1.1,
                       ),
                     ),
                     const SizedBox(height: 5),
@@ -546,7 +532,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                 // принудительно разворачивался в альбом и всегда попадал
                 // в широкую, поэтому пропажу никто не замечал.
                 child: GestureDetector(
-                  onLongPress: _showAdminPin,
+                  onLongPress: _openAdmin,
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(100),
                     child: AuthImage(
@@ -567,8 +553,12 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               LangSwitcher(config: config),
+              const SizedBox(width: 8),
+              _searchButton(config),
+              _refreshButton(config),
             ],
           ),
+          _offlineNote(config),
         ],
       ),
     );
@@ -595,7 +585,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               const SizedBox(width: 15),
               Text(
                 AppLocalizations.of(context).catalog,
-                style: GoogleFonts.outfit(
+                style: config.titleStyle(
                   fontSize: 32,
                   letterSpacing: 1.5,
                   fontWeight: FontWeight.w800,
@@ -615,7 +605,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                   )
                 : GridView.builder(
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: isDesktop ? 3 : 2,
+                      crossAxisCount: _categoryColumns(config, desktop: true),
                       childAspectRatio: 0.85,
                       crossAxisSpacing: isDesktop ? 25 : 15,
                       mainAxisSpacing: isDesktop ? 25 : 15,
@@ -623,10 +613,14 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                     itemCount: rootCategories.length,
                     itemBuilder: (context, index) {
                       final cat = rootCategories[index];
-                      return _CategoryCard(
-                        category: cat,
-                        config: config,
-                        onTap: () => _goToMenu(cat.id),
+                      return FadeSlideIn(
+                        key: ValueKey(cat.id),
+                        index: index,
+                        child: _CategoryCard(
+                          category: cat,
+                          config: config,
+                          onTap: () => _goToMenu(cat.id),
+                        ),
                       );
                     },
                   ),
@@ -648,18 +642,22 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
       );
     }
     return SliverGrid(
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: _categoryColumns(config, desktop: false),
         childAspectRatio: 0.85,
         crossAxisSpacing: 15,
         mainAxisSpacing: 15,
       ),
       delegate: SliverChildBuilderDelegate((context, index) {
         final cat = rootCategories[index];
-        return _CategoryCard(
-          category: cat,
-          config: config,
-          onTap: () => _goToMenu(cat.id),
+        return FadeSlideIn(
+          key: ValueKey(cat.id),
+          index: index,
+          child: _CategoryCard(
+            category: cat,
+            config: config,
+            onTap: () => _goToMenu(cat.id),
+          ),
         );
       }, childCount: rootCategories.length),
     );
@@ -679,13 +677,13 @@ class _CategoryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return Pressable(
       onTap: onTap,
       child: Hero(
         tag: 'category_${category.id}',
         child: Container(
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(30),
+            borderRadius: BorderRadius.circular(config.radius(30)),
             color: config.surface,
             boxShadow: [
               BoxShadow(
@@ -695,8 +693,13 @@ class _CategoryCard extends StatelessWidget {
               ),
             ],
           ),
+          // Тонкая светлая кромка: тёмное фото не сливается с тёмным фоном
+          foregroundDecoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(config.radius(30)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+          ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(30),
+            borderRadius: BorderRadius.circular(config.radius(30)),
             child: Stack(
               fit: StackFit.expand,
               children: [
@@ -737,8 +740,12 @@ class _CategoryCard extends StatelessWidget {
                             return Text(
                               category.localizedName(locale.languageCode).toUpperCase(),
                               textAlign: TextAlign.center,
-                              style: GoogleFonts.outfit(
-                                fontSize: 22,
+                              // длинное название не вылезает за карточку
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: config.titleStyle(
+                                // в мелких карточках и шрифт мельче
+                                fontSize: 22 * config.gridScale.clamp(0.8, 1.15),
                                 fontWeight: FontWeight.w800,
                                 letterSpacing: 1.2,
                                 color: Colors.white,
@@ -762,7 +769,7 @@ class _CategoryCard extends StatelessWidget {
                               style: GoogleFonts.manrope(
                                 fontSize: 10,
                                 fontWeight: FontWeight.bold,
-                                color: config.bg,
+                                color: config.onAccent,
                               ),
                             ),
                           ),

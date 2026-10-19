@@ -1,0 +1,65 @@
+# Платформа меню на одном сервере. Настройки — в .env рядом (образец:
+# .env.example). Запуск из этой папки:
+#   docker compose up -d --build
+#
+# Два варианта, выбираются в .env:
+# - на сервере уже есть nginx (другой проект занял 80/443) — меню слушает
+#   только 127.0.0.1:MENU_PORT, домен на него пересылает тот nginx
+#   (готовый блок — nginx-menu.conf);
+# - сервер только для меню — COMPOSE_PROFILES=caddy, тогда HTTPS делает
+#   свой Caddy на 80/443.
+
+services:
+  menu:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    # Каждая сборка — со своей меткой версии: откат = запуск прежней метки
+    image: menu-platform:${MENU_VERSION:-latest}
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      # База и загруженные файлы — на диске сервера, а не внутри контейнера:
+      # переживают обновления и видны для резервных копий
+      - ./data:/data
+      - ./backups:/backups
+    # Только для самого сервера: снаружи меню доступно через nginx/Caddy
+    ports:
+      - "127.0.0.1:${MENU_PORT:-8090}:8090"
+    # Сервер делит память с другими проектами, свопа нет. Меню хватает
+    # ~100 МБ, запас — на сжатие крупных фото
+    mem_limit: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  caddy:
+    image: caddy:2.8.4
+    profiles: [caddy]
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?Укажите DOMAIN в .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Сертификаты HTTPS — сохраняются между перезапусками
+      - caddy_data:/data
+      - caddy_config:/config
+    mem_limit: 128m
+    depends_on:
+      menu:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  caddy_data:
+  caddy_config:

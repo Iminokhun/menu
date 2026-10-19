@@ -2,10 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'config/supabase_config.dart';
+import 'config/current_branch.dart';
+import 'menu_store.dart';
 import 'l10n/app_localizations.dart';
 import 'l10n/translation_service.dart';
+import 'models/branch.dart';
+import 'screens/branch_picker_screen.dart';
+import 'screens/menu_unavailable_screen.dart';
+import 'screens/no_connection_screen.dart';
 import 'screens/welcome_screen.dart';
 import 'theme/theme_config.dart';
 import 'theme/current_theme.dart';
@@ -13,16 +17,58 @@ import 'theme/current_theme.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Supabase.initialize(
-    url: supabaseUrl,
-    anonKey: supabaseAnonKey, // ignore: deprecated_member_use
-  );
+  // Филиал определяем до первого кадра: ссылка `?branch=` в вебе, иначе
+  // настройка, сохранённая на устройстве. Если ни того ни другого нет —
+  // currentBranch останется null и откроется экран выбора.
+  //
+  // Меню берётся из сохранённой на устройстве копии — так оно открывается
+  // и без интернета; свежее догружается следом.
+  menuStore.data.addListener(_syncBranch);
+  menuStore.status.addListener(_syncBranch);
+  currentBranch.addListener(_syncTheme);
+  final slug = await resolveBranchSlug();
+  if (slug != null) await menuStore.open(slug);
 
   // Ориентация задаётся не здесь, а в WelcomeScreen: до первого кадра размер
   // экрана ещё не известен, а телефон и планшет нуждаются в разном поведении.
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
   runApp(const CafeAndalusRoot());
+}
+
+/// Филиал на экране — тот, чьё меню загружено. Пустое меню сбрасывает
+/// филиал, только если филиала больше нет: при обрыве сети остаётся копия.
+void _syncBranch() {
+  final menu = menuStore.data.value;
+  if (menu != null) {
+    final b = menu.branch;
+    final cur = currentBranch.value;
+    // Тот же филиал без изменений не переназначаем: иначе открытая админка
+    // перечитала бы форму и потеряла несохранённые правки
+    final same = cur != null &&
+        cur.id == b.id &&
+        cur.slug == b.slug &&
+        cur.name == b.name &&
+        cur.slogan == b.slogan &&
+        cur.phone == b.phone &&
+        cur.logoUrl == b.logoUrl &&
+        cur.qrUrl == b.qrUrl &&
+        cur.style == b.style;
+    if (!same) currentBranch.value = b;
+  } else if (menuStore.status.value == MenuResult.notFound ||
+      menuStore.status.value == MenuResult.unpaid) {
+    currentBranch.value = null;
+  }
+}
+
+/// Оформление, заданное кафе, применяется сразу: после «Сохранить» в
+/// админке и после «Обновить» на экране гостя.
+BranchStyle? _appliedStyle;
+void _syncTheme() {
+  final style = currentBranch.value?.style ?? const BranchStyle();
+  if (style == _appliedStyle) return; // не перестраиваем всё приложение зря
+  _appliedStyle = style;
+  appTheme.value = ThemeConfig.forStyle(style);
 }
 
 class CafeAndalusRoot extends StatelessWidget {
@@ -35,10 +81,9 @@ class CafeAndalusRoot extends StatelessWidget {
       child: ValueListenableBuilder<Locale>(
         valueListenable: currentLocale,
         builder: (context, locale, child) {
-          return ValueListenableBuilder<AppThemeType>(
-            valueListenable: currentTheme,
-            builder: (context, themeType, child) {
-              final config = ThemeConfig.palettes[themeType]!;
+          return ValueListenableBuilder<ThemeConfig>(
+            valueListenable: appTheme,
+            builder: (context, config, child) {
               return MaterialApp(
                 title: 'Cafe Andalus',
                 debugShowCheckedModeBanner: false,
@@ -60,7 +105,25 @@ class CafeAndalusRoot extends StatelessWidget {
                   useMaterial3: true,
                   textTheme: TextTheme(bodyMedium: GoogleFonts.manrope()),
                 ),
-                home: const WelcomeScreen(),
+                // Экран выбора филиала и главный экран подменяются здесь,
+                // а не переходом в Navigator: сам выбор только выставляет
+                // currentBranch, и смена филиала из админки работает так же.
+                home: ValueListenableBuilder<Branch?>(
+                  valueListenable: currentBranch,
+                  builder: (context, branch, child) => branch != null
+                      ? const WelcomeScreen()
+                      // Филиал известен, но меню ни разу не скачивалось и
+                      // сети нет — выбор филиала тут не поможет
+                      : ValueListenableBuilder<MenuResult?>(
+                          valueListenable: menuStore.status,
+                          builder: (context, status, child) => switch (status) {
+                            MenuResult.unpaid => const MenuUnavailableScreen(),
+                            MenuResult.offlineNoCache when menuStore.slug != null =>
+                              const NoConnectionScreen(),
+                            _ => const BranchPickerScreen(),
+                          },
+                        ),
+                ),
               );
             },
           );

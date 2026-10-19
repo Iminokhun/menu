@@ -1,0 +1,3 @@
+# Сервер — отдельный Dart-проект без Flutter: у него свои правила проверки
+# кода, а не flutter_lints из корня проекта.
+include: package:lints/recommended.yaml

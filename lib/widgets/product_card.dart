@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'auth_image.dart';
+import 'dish_3d_view.dart';
+import 'motion.dart';
+import 'live_photo/live_photo_view.dart';
 import '../responsive.dart';
 import '../models/product.dart';
 import '../theme/theme_config.dart';
@@ -45,7 +48,7 @@ class LuxuryCard extends StatelessWidget {
         ? Colors.black.withValues(alpha: isAcc ? 1.0 : 0.3)
         : config.accent.withValues(alpha: 0.05);
 
-    return GestureDetector(
+    return Pressable(
       onTap: () {
         HapticFeedback.selectionClick();
         _showDetails(context);
@@ -53,7 +56,9 @@ class LuxuryCard extends StatelessWidget {
       child: Container(
         decoration: BoxDecoration(
           color: config.glass,
-          borderRadius: BorderRadius.circular(16),
+          // 18 = радиус фото (12) + отступ до него (6): углы карточки и
+          // фото идут параллельно, а не «разъезжаются»
+          borderRadius: BorderRadius.circular(config.radius(18)),
           border: Border.all(
             color: isAcc ? config.accent : Colors.white.withValues(alpha: 0.08),
             width: isAcc ? 2 : 0.5,
@@ -71,10 +76,15 @@ class LuxuryCard extends StatelessWidget {
                     width: double.infinity,
                     decoration: BoxDecoration(
                       color: imageBgColor,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(config.radius(12)),
+                    ),
+                    // Тонкая светлая кромка: край фото не растворяется в фоне
+                    foregroundDecoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(config.radius(12)),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
                     ),
                     child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(config.radius(12)),
                       child: Padding(
                         padding: const EdgeInsets.all(8.0),
                         child: Hero(
@@ -87,6 +97,31 @@ class LuxuryCard extends StatelessWidget {
                       ),
                     ),
                   ),
+                  // У блюда есть 3D-модель — видно ещё в списке
+                  if (product.modelUrl.isNotEmpty)
+                    Positioned(
+                      left: 10,
+                      top: 10,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.55),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.view_in_ar, size: 13, color: config.accent),
+                            const SizedBox(width: 3),
+                            Text('3D',
+                                style: GoogleFonts.manrope(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white)),
+                          ],
+                        ),
+                      ),
+                    ),
                   ValueListenableBuilder<List<CartItem>>(
                     valueListenable: globalCart,
                     builder: (context, cartItems, child) {
@@ -109,18 +144,19 @@ class LuxuryCard extends StatelessWidget {
                           ),
                           child: Row(
                             children: [
-                              const Icon(
+                              Icon(
                                 Icons.shopping_basket,
                                 size: 14,
-                                color: Colors.black,
+                                color: config.onAccent,
                               ),
                               const SizedBox(width: 4),
                               Text(
                                 "$count",
-                                style: const TextStyle(
-                                  color: Colors.black,
+                                style: TextStyle(
+                                  color: config.onAccent,
                                   fontWeight: FontWeight.bold,
                                   fontSize: 12,
+                                  fontFeatures: const [FontFeature.tabularFigures()],
                                 ),
                               ),
                             ],
@@ -145,6 +181,8 @@ class LuxuryCard extends StatelessWidget {
                         product.localizedName(locale.languageCode),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
+                        // Контрастная тема — простой рубленый шрифт для
+                        // тех, кто плохо видит; иначе — шрифт, выбранный кафе
                         style: isAcc
                             ? GoogleFonts.inter(
                                 fontSize: 18,
@@ -152,8 +190,8 @@ class LuxuryCard extends StatelessWidget {
                                 color: config.accent,
                                 height: 1.1,
                               )
-                            : GoogleFonts.cormorantGaramond(
-                                fontSize: 18,
+                            : config.dishTitleStyle(
+                                fontSize: 18 * config.gridScale.clamp(0.85, 1.15),
                                 fontWeight: FontWeight.bold,
                                 color: config.accent,
                                 height: 1.1,
@@ -171,12 +209,23 @@ class LuxuryCard extends StatelessWidget {
                               fontSize: isAcc ? 24 : 20,
                               fontWeight: FontWeight.w900,
                               color: isAcc ? config.accent : config.text,
+                              // цифры одной ширины: цены в соседних карточках
+                              // стоят ровно и не «прыгают»
+                              fontFeatures: const [FontFeature.tabularFigures()],
                             ),
                           ),
                         ),
-                        GestureDetector(
+                        // Видимый кружок 30 px, а нажимать можно по
+                        // квадрату 44 px — по маленькому кружку пальцем
+                        // промахиваются и открывают карточку вместо «+»
+                        Pressable(
+                          pressedScale: 0.85,
                           onTap: () => onAdd(product, null, 1),
                           child: Container(
+                            width: 44,
+                            height: 44,
+                            alignment: Alignment.centerRight,
+                            child: Container(
                             padding: const EdgeInsets.all(6),
                             decoration: BoxDecoration(
                               color: config.surface,
@@ -190,6 +239,7 @@ class LuxuryCard extends StatelessWidget {
                               size: 18,
                               color: config.accent,
                             ),
+                          ),
                           ),
                         ),
                       ],
@@ -269,8 +319,59 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
     );
   }
 
+  /// Кнопки поверх фото: «Смотреть в 3D» — у блюд с 3D-моделью,
+  /// «Живое фото» — у любого блюда с фото.
+  Widget _withViewButtons(Widget image) {
+    final product = widget.product;
+    final has3D = product.modelUrl.isNotEmpty;
+    final hasPhoto = product.imageUrl.isNotEmpty;
+    if (!has3D && !hasPhoto) return image;
+    final conf = widget.config;
+    final title = product.localizedName(currentLocale.value.languageCode);
+
+    void open(Widget page) {
+      HapticFeedback.selectionClick();
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+    }
+
+    Widget button(IconData icon, String label, VoidCallback onPressed) => ElevatedButton.icon(
+          onPressed: onPressed,
+          icon: Icon(icon, size: 18),
+          label: Text(label, style: GoogleFonts.manrope(fontWeight: FontWeight.w700)),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: conf.accent,
+            foregroundColor: conf.onAccent,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          ),
+        );
+
+    return Stack(
+      children: [
+        Positioned.fill(child: image),
+        Positioned(
+          left: 8,
+          right: 8,
+          bottom: 14,
+          child: Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 10,
+            runSpacing: 8,
+            children: [
+              if (has3D)
+                button(Icons.view_in_ar, 'Смотреть в 3D',
+                    () => open(Dish3DView(product: product, title: title, config: conf))),
+              if (hasPhoto)
+                button(Icons.motion_photos_on_outlined, 'Живое фото',
+                    () => open(LivePhotoView(product: product, title: title, config: conf))),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildImageSection() {
-    return Container(
+    return _withViewButtons(Container(
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.2),
         borderRadius: const BorderRadius.only(
@@ -285,11 +386,11 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
           child: AuthImage(url: widget.product.imageUrl, fit: BoxFit.contain),
         ),
       ),
-    );
+    ));
   }
 
   Widget _buildDesktopImageSection() {
-    return Container(
+    return _withViewButtons(Container(
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.2),
         borderRadius: const BorderRadius.only(
@@ -304,7 +405,7 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
           child: AuthImage(url: widget.product.imageUrl, fit: BoxFit.contain),
         ),
       ),
-    );
+    ));
   }
 
   Widget _buildDesktopLayout(ThemeConfig conf) {
@@ -342,7 +443,7 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
               Expanded(
                 child: Text(
                   productName,
-                  style: GoogleFonts.cormorantGaramond(
+                  style: conf.dishTitleStyle(
                     fontSize: isMobile ? 26 : 32,
                     fontWeight: FontWeight.bold,
                     color: conf.accent,
@@ -439,12 +540,18 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
             icon: Icon(Icons.remove, color: conf.text),
             onPressed: quantity > 1 ? _decrement : null,
           ),
-          Text(
-            "$quantity",
-            style: TextStyle(
-              color: conf.accent,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
+          // Ширина числа не меняется при 9 → 10: кнопки «−» и «+» не съезжают
+          SizedBox(
+            width: 34,
+            child: Text(
+              "$quantity",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: conf.accent,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
             ),
           ),
           IconButton(
@@ -466,7 +573,7 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
         },
         style: ElevatedButton.styleFrom(
           backgroundColor: conf.accent,
-          foregroundColor: Colors.black,
+          foregroundColor: conf.onAccent,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
@@ -490,6 +597,7 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
                   style: const TextStyle(
                     fontWeight: FontWeight.w900,
                     fontSize: 16,
+                    fontFeatures: [FontFeature.tabularFigures()],
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -501,3 +609,4 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
     );
   }
 }
+
