@@ -29,10 +29,16 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
   String _savedQrUrl = '';
   String _logoUrl = '';
 
-  /// Языки меню, первый — основной. [_savedLanguages] — как записано на
-  /// сервере: по ним видно, что основной язык меняется.
+  /// Языки меню, первый — основной. Сохраняются сразу при каждом
+  /// изменении, а не общей кнопкой: язык, появившийся в списке, должен
+  /// сразу появиться и в окнах категорий и товаров.
   List<String> _languages = const ['ru'];
-  List<String> _savedLanguages = const ['ru'];
+  bool _savingLanguages = false;
+
+  /// Филиал, чья форма на экране: при смене филиала форма перечитывается,
+  /// а при обновлении того же (сохранили языки) — нет, иначе пропали бы
+  /// несохранённые правки названия или телефона.
+  String? _formBranchId;
   bool _loading = true;
   bool _saving = false;
 
@@ -75,7 +81,9 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
     super.dispose();
   }
 
-  void _reload() => _load();
+  void _reload() {
+    if (currentBranch.value?.id != _formBranchId) _load();
+  }
 
   Future<void> _load() async {
     final branch = currentBranch.value;
@@ -110,7 +118,8 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
         _slugCtrl.text = (data['slug'] as String?) ?? '';
         _logoUrl = (data['logo_url'] as String?) ?? '';
         _savedQrUrl = (data['qr_url'] as String?) ?? '';
-        _languages = _savedLanguages = Branch.fromJson(data).languages;
+        _languages = Branch.fromJson(data).languages;
+        _formBranchId = branch.id;
         _siteBase = me.menuUrl.isEmpty ? null : me.menuUrl;
         _cafeName = me.cafeName;
         _branchCount = count;
@@ -145,16 +154,9 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
       return;
     }
 
-    final oldMain = _savedLanguages.first;
-    final newMain = _languages.first;
-    if (oldMain != newMain && !await _confirmMainLanguage(oldMain, newMain)) {
-      return;
-    }
-
     setState(() => _saving = true);
     try {
       final row = await api.patch('/api/admin/branches/${branch.id}', {
-        'languages': _languages,
         'slug': slug,
         'name': _nameCtrl.text.trim(),
         'slogan': _sloganCtrl.text.trim(),
@@ -171,7 +173,6 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
         // slug могли поменять — сохранённая на устройстве настройка
         // иначе указывала бы на филиал, которого больше нет.
         await saveBranchSlug(updated.slug);
-        _savedLanguages = updated.languages;
       }
 
       _toast('Настройки сохранены!');
@@ -211,6 +212,28 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
       ),
     );
     return ok == true;
+  }
+
+  Future<void> _saveLanguages(List<String> next) async {
+    final branch = currentBranch.value;
+    if (branch == null || _savingLanguages) return;
+    if (next.first != _languages.first &&
+        !await _confirmMainLanguage(_languages.first, next.first)) {
+      return;
+    }
+    setState(() => _savingLanguages = true);
+    try {
+      final row = await api.patch('/api/admin/branches/${branch.id}', {'languages': next});
+      if (row is Map<String, dynamic>) {
+        final updated = Branch.fromJson(row);
+        if (mounted) setState(() => _languages = updated.languages);
+        currentBranch.value = updated;
+      }
+      _toast('Языки сохранены');
+    } catch (e) {
+      _toast('Ошибка сохранения языков: $e', isError: true);
+    }
+    if (mounted) setState(() => _savingLanguages = false);
   }
 
   Widget _languagesCard() {
@@ -258,19 +281,23 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
                     )
                   else ...[
                     TextButton(
-                      onPressed: () => setState(() => _languages = [
-                            code,
-                            ..._languages.where((c) => c != code),
-                          ]),
+                      onPressed: _savingLanguages
+                          ? null
+                          : () => _saveLanguages([
+                                code,
+                                ..._languages.where((c) => c != code),
+                              ]),
                       child: const Text('сделать основным', style: TextStyle(color: Colors.white54, fontSize: 12)),
                     ),
                     IconButton(
                       icon: const Icon(Icons.close, color: Colors.white38, size: 18),
                       tooltip: 'Убрать язык',
-                      onPressed: () => setState(() => _languages = [
-                            for (final c in _languages)
-                              if (c != code) c,
-                          ]),
+                      onPressed: _savingLanguages
+                          ? null
+                          : () => _saveLanguages([
+                                for (final c in _languages)
+                                  if (c != code) c,
+                              ]),
                     ),
                   ],
                 ],
@@ -281,7 +308,8 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
             PopupMenuButton<String>(
               tooltip: '',
               color: const Color(0xFF2A2A2A),
-              onSelected: (code) => setState(() => _languages = [..._languages, code]),
+              enabled: !_savingLanguages,
+              onSelected: (code) => _saveLanguages([..._languages, code]),
               itemBuilder: (_) => [
                 for (final l in available)
                   PopupMenuItem(
@@ -303,6 +331,7 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
             ),
           const SizedBox(height: 8),
           const Text(
+            'Изменения языков сохраняются сразу. '
             'Гость видит меню на языке своего телефона, если он есть в списке, '
             'иначе — на основном. Переводы названий и описаний вводятся в '
             'категориях и товарах; где перевода нет, показывается основной текст. '
