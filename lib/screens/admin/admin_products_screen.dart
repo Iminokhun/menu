@@ -19,6 +19,13 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
   String? _filterCategoryId;
   bool _loading = true;
 
+  /// Остальные филиалы кафе — куда можно скопировать блюда
+  List<Map<String, dynamic>> _otherBranches = [];
+
+  /// Отмеченные для копирования блюда; null — режим выбора выключен
+  Set<String>? _selected;
+  bool _copying = false;
+
   static const _accent = Color(0xFFD4AF37);
   static const _bg = Color(0xFF0A0A0A);
   static const _surface = Color(0xFF1A1A1A);
@@ -41,6 +48,7 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
   /// без видимой причины.
   void _reload() {
     _filterCategoryId = null;
+    _selected = null;
     _loadAll();
   }
 
@@ -60,11 +68,18 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
       final results = await Future.wait([
         api.list('/api/admin/categories', {'branch_id': branch.id}),
         api.list('/api/admin/products', {'branch_id': branch.id}),
+        api.list('/api/admin/branches'),
       ]);
       if (!mounted) return;
       setState(() {
         _categories = List<Map<String, dynamic>>.from(results[0]);
         _products = List<Map<String, dynamic>>.from(results[1]);
+        _otherBranches = [
+          for (final b in results[2])
+            if (b['id'] != branch.id) Map<String, dynamic>.from(b),
+        ];
+        // Удалённые с другого устройства блюда из выбора убираем
+        _selected = _selected?.intersection({for (final p in _products) p['id'] as String});
         _loading = false;
       });
     } catch (e) {
@@ -559,39 +574,179 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
     );
   }
 
+  void _toggle(String id) => setState(() {
+        final s = _selected!;
+        if (!s.remove(id)) s.add(id);
+      });
+
+  /// Блюда — в другой филиал. Категории там ищутся по названию (нет —
+  /// создаются), блюда с тем же названием в категории пропускаются.
+  Future<void> _copy() async {
+    final ids = _selected?.toList() ?? const [];
+    if (ids.isEmpty || _otherBranches.isEmpty) return;
+    String target = _otherBranches.first['id'] as String;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          backgroundColor: _surface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text('Копировать блюда (${ids.length})', style: const TextStyle(color: Colors.white)),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('В какой филиал:', style: TextStyle(color: Colors.white54, fontSize: 13)),
+                const SizedBox(height: 4),
+                RadioGroup<String>(
+                  groupValue: target,
+                  onChanged: (v) => setD(() => target = v!),
+                  child: Column(
+                    children: [
+                      for (final b in _otherBranches)
+                        RadioListTile<String>(
+                          value: b['id'] as String,
+                          activeColor: _accent,
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(b['name'] ?? '', style: const TextStyle(color: Colors.white)),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Блюда попадут в категории с теми же названиями — каких нет, '
+                  'создадутся. Блюда, которые там уже есть (то же название в той же '
+                  'категории), пропустятся: цены в том филиале не изменятся.',
+                  style: TextStyle(color: Colors.white38, fontSize: 12, height: 1.4),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: _accent, foregroundColor: Colors.black),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Копировать'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+
+    setState(() => _copying = true);
+    try {
+      final r = await api.post('/api/admin/products/copy', {
+        'product_ids': ids,
+        'to_branch_id': target,
+      }) as Map<String, dynamic>;
+      final name = _otherBranches.firstWhere((b) => b['id'] == target)['name'];
+      _toast([
+        'В «$name» скопировано: ${r['copied']}',
+        if ((r['skipped'] as int? ?? 0) > 0) 'уже были: ${r['skipped']}',
+        if ((r['categories_created'] as int? ?? 0) > 0) 'создано категорий: ${r['categories_created']}',
+      ].join(', '));
+      if (mounted) setState(() => _selected = null);
+    } catch (e) {
+      _toast('Не скопировалось: $e', isError: true);
+    }
+    if (mounted) setState(() => _copying = false);
+  }
+
+  /// Шапка в режиме выбора: сколько отмечено, «выбрать все» (по фильтру —
+  /// так копируется вся категория), «копировать в…».
+  PreferredSizeWidget _selectionBar() {
+    final visible = {for (final p in _filtered) p['id'] as String};
+    final allChosen = visible.isNotEmpty && _selected!.containsAll(visible);
+    return AppBar(
+      backgroundColor: _surface,
+      automaticallyImplyLeading: false,
+      leading: IconButton(
+        icon: const Icon(Icons.close, color: Colors.white70),
+        tooltip: 'Отмена',
+        onPressed: () => setState(() => _selected = null),
+      ),
+      title: Text('Выбрано: ${_selected!.length}',
+          style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.w700)),
+      actions: [
+        _categoryFilter(),
+        TextButton(
+          onPressed: visible.isEmpty
+              ? null
+              : () => setState(() => allChosen
+                  ? _selected!.removeAll(visible)
+                  : _selected!.addAll(visible)),
+          child: Text(allChosen ? 'Снять все' : 'Выбрать все', style: const TextStyle(color: Colors.white70)),
+        ),
+        const SizedBox(width: 8),
+        Padding(
+          padding: const EdgeInsets.only(right: 12),
+          child: ElevatedButton.icon(
+            onPressed: _selected!.isEmpty || _copying ? null : _copy,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _accent,
+              foregroundColor: Colors.black,
+              disabledBackgroundColor: Colors.white10,
+              disabledForegroundColor: Colors.white30,
+            ),
+            icon: _copying
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                : const Icon(Icons.copy_all_outlined, size: 18),
+            label: const Text('Копировать в…'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _categoryFilter() {
+    if (_categories.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(right: 16),
+      child: DropdownButton<String?>(
+        value: _filterCategoryId,
+        dropdownColor: const Color(0xFF2A2A2A),
+        style: const TextStyle(color: Colors.white, fontSize: 13),
+        underline: const SizedBox(),
+        hint: const Text('Все категории', style: TextStyle(color: Colors.white54, fontSize: 13)),
+        items: [
+          const DropdownMenuItem(value: null, child: Text('Все категории', style: TextStyle(color: Colors.white54))),
+          ...categoryTree(_categories).map((c) => DropdownMenuItem(
+            value: c['id'] as String,
+            // Подкатегория — со сдвигом под своей основной
+            child: Text(isSubcategory(c, _categories) ? '    ${c['name'] ?? ''}' : c['name'] ?? ''),
+          )),
+        ],
+        onChanged: (v) => setState(() => _filterCategoryId = v),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final selecting = _selected != null;
     return Scaffold(
       backgroundColor: _bg,
-      appBar: AppBar(
+      appBar: selecting ? _selectionBar() : AppBar(
         backgroundColor: _surface,
         automaticallyImplyLeading: false,
         title: Text('Товары', style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.w700)),
         actions: [
-          if (_categories.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(right: 16),
-              child: DropdownButton<String?>(
-                value: _filterCategoryId,
-                dropdownColor: const Color(0xFF2A2A2A),
-                style: const TextStyle(color: Colors.white, fontSize: 13),
-                underline: const SizedBox(),
-                hint: const Text('Все категории', style: TextStyle(color: Colors.white54, fontSize: 13)),
-                items: [
-                  const DropdownMenuItem(value: null, child: Text('Все категории', style: TextStyle(color: Colors.white54))),
-                  ...categoryTree(_categories).map((c) => DropdownMenuItem(
-                    value: c['id'] as String,
-                    // Подкатегория — со сдвигом под своей основной
-                    child: Text(isSubcategory(c, _categories) ? '    ${c['name'] ?? ''}' : c['name'] ?? ''),
-                  )),
-                ],
-                onChanged: (v) => setState(() => _filterCategoryId = v),
-              ),
+          _categoryFilter(),
+          if (_otherBranches.isNotEmpty && _products.isNotEmpty)
+            TextButton.icon(
+              onPressed: () => setState(() => _selected = {}),
+              icon: const Icon(Icons.copy_all_outlined, color: _accent, size: 18),
+              label: const Text('Копировать в другой филиал', style: TextStyle(color: _accent)),
             ),
           IconButton(icon: const Icon(Icons.refresh, color: Colors.white54), onPressed: _loadAll),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: selecting ? null : FloatingActionButton.extended(
         heroTag: 'fab_products',
         backgroundColor: _accent,
         foregroundColor: Colors.black,
@@ -621,7 +776,10 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                     final hasImage = (p['image_url'] as String?)?.isNotEmpty == true;
                     final isHidden = p['is_visible'] == false;
                     final portionsCount = (p['portions'] as List?)?.length ?? 0;
+                    final id = p['id'] as String;
                     return ListTile(
+                      // В режиме выбора строка целиком отмечает блюдо
+                      onTap: selecting ? () => _toggle(id) : null,
                       contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
                       leading: Stack(
                         children: [
@@ -663,13 +821,21 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                         ].join('  ·  '),
                         style: const TextStyle(color: Colors.white38, fontSize: 12),
                       ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(icon: const Icon(Icons.edit_outlined, color: _accent), onPressed: () => _showDialog(item: p)),
-                          IconButton(icon: const Icon(Icons.delete_outline, color: Colors.redAccent), onPressed: () => _delete(p)),
-                        ],
-                      ),
+                      trailing: selecting
+                          ? Checkbox(
+                              value: _selected!.contains(id),
+                              onChanged: (_) => _toggle(id),
+                              activeColor: _accent,
+                              checkColor: Colors.black,
+                              side: const BorderSide(color: Colors.white38),
+                            )
+                          : Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(icon: const Icon(Icons.edit_outlined, color: _accent), onPressed: () => _showDialog(item: p)),
+                                IconButton(icon: const Icon(Icons.delete_outline, color: Colors.redAccent), onPressed: () => _delete(p)),
+                              ],
+                            ),
                     );
                   },
                 ),

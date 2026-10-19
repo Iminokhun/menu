@@ -175,6 +175,7 @@ class Api {
     r.post('/api/admin/products', _createProduct);
     r.patch('/api/admin/products/<id>', _updateProduct);
     r.delete('/api/admin/products/<id>', _deleteProduct);
+    r.post('/api/admin/products/copy', _copyProducts);
 
     r.post('/api/admin/upload', _upload);
 
@@ -933,6 +934,132 @@ class Api {
     _ownRow(u, 'products', id);
     db.execute('delete from products where id = ?', [id]);
     return _json({'ok': true});
+  }
+
+  /// Блюда — в другой филиал своего кафе. Категория там ищется по
+  /// названию на том же уровне (подкатегория — внутри основной с именем
+  /// родителя), нет — создаётся. Блюдо с тем же названием в этой категории
+  /// уже есть — пропускается: у филиала могут быть свои цены. Файлы общие:
+  /// копия ссылается на те же фото и 3D, удаление блюда файлов не трогает.
+  /// id строки с тем же названием без учёта регистра. Сравнение в Dart:
+  /// `lower()` в SQLite понимает только латиницу, «Кофе» ≠ «кофе».
+  static String? _byName(ResultSet rows, String name) {
+    final key = name.trim().toLowerCase();
+    for (final r in rows) {
+      if ((r['name'] as String).trim().toLowerCase() == key) {
+        return r['id'] as String;
+      }
+    }
+    return null;
+  }
+
+  Future<Response> _copyProducts(Request req) async {
+    final u = _cafeAdmin(req);
+    final body = await _body(req);
+    final ids = body['product_ids'];
+    final to = body['to_branch_id'];
+    if (ids is! List ||
+        ids.isEmpty ||
+        ids.length > 1000 ||
+        ids.any((i) => i is! String)) {
+      throw ApiError(400, 'Выберите от 1 до 1000 блюд');
+    }
+    if (to is! String) throw ApiError(400, 'Выберите филиал');
+    _ownBranch(u, to);
+    final dishes = [
+      for (final id in ids.toSet()) _ownRow(u, 'products', id as String),
+    ];
+    if (dishes.any((d) => d['branch_id'] == to)) {
+      throw ApiError(400, 'Блюда уже в этом филиале — выберите другой');
+    }
+
+    var copied = 0, skipped = 0, created = 0;
+    // Категория источника → категория в целевом филиале
+    final mapped = <String, String>{};
+
+    String targetCategory(String sourceId) {
+      final cached = mapped[sourceId];
+      if (cached != null) return cached;
+      final src = db.select('select * from categories where id = ?', [
+        sourceId,
+      ]).first;
+      final parentSrc = src['parent_id'] as String?;
+      final parent = parentSrc == null ? null : targetCategory(parentSrc);
+      final found = _byName(
+        db.select(
+          'select id, name from categories where branch_id = ? and parent_id is ?',
+          [to, parent],
+        ),
+        src['name'] as String,
+      );
+      final String id;
+      if (found != null) {
+        id = found;
+      } else {
+        id = newId();
+        db.execute(
+          '''insert into categories (id, branch_id, parent_id, name, i18n,
+                                     image_url, is_visible, sort_order)
+             values (?, ?, ?, ?, ?, ?, ?, ?)''',
+          [
+            id,
+            to,
+            parent,
+            src['name'],
+            src['i18n'],
+            src['image_url'],
+            src['is_visible'],
+            src['sort_order'],
+          ],
+        );
+        created++;
+      }
+      return mapped[sourceId] = id;
+    }
+
+    inTransaction(db, () {
+      for (final d in dishes) {
+        final source = d['category_id'] as String?;
+        final category = source == null ? null : targetCategory(source);
+        final exists = _byName(
+          db.select(
+            'select id, name from products where branch_id = ? and category_id is ?',
+            [to, category],
+          ),
+          d['name'] as String,
+        );
+        if (exists != null) {
+          skipped++;
+          continue;
+        }
+        db.execute(
+          '''insert into products (id, branch_id, category_id, name, description,
+                                   i18n, price, image_url, model_url, is_visible,
+                                   sort_order, portions)
+             values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+          [
+            newId(),
+            to,
+            category,
+            d['name'],
+            d['description'],
+            d['i18n'],
+            d['price'],
+            d['image_url'],
+            d['model_url'],
+            d['is_visible'],
+            d['sort_order'],
+            d['portions'],
+          ],
+        );
+        copied++;
+      }
+    });
+    return _json({
+      'copied': copied,
+      'skipped': skipped,
+      'categories_created': created,
+    });
   }
 
   /// Загрузка картинки или 3D-модели: тело запроса — сами байты, расширение

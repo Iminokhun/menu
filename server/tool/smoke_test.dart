@@ -773,6 +773,149 @@ Future<void> main(List<String> args) async {
   (s, r) = await call('DELETE', '/api/admin/branches/$branchA', token: ta);
   expect('удалить единственный филиал → 400', s == 400, r);
 
+  // ---------- Копирование блюд между филиалами (кафе B) ----------
+  (s, r) = await call('GET', '/api/admin/branches', token: tb);
+  final branchB1 = (r as List).firstWhere((b) => b['id'] != branchB)['id'];
+  Future<String> newCat(String branch, String name, [String? parent]) async {
+    final (_, c) = await call(
+      'POST',
+      '/api/admin/categories',
+      token: tb,
+      body: {'branch_id': branch, 'name': name, 'parent_id': ?parent},
+    );
+    return c['id'] as String;
+  }
+
+  Future<String> newDish(String branch, String cat, String name) async {
+    final (_, d) = await call(
+      'POST',
+      '/api/admin/products',
+      token: tb,
+      body: {
+        'branch_id': branch,
+        'category_id': cat,
+        'name': name,
+        'price': 150,
+        'image_url': 'https://example.com/$name.jpg',
+        'i18n': {
+          'en': {'name': '$name EN'},
+        },
+      },
+    );
+    return d['id'] as String;
+  }
+
+  final drinks = await newCat(branchB1, 'Напитки');
+  final coffee = await newCat(branchB1, 'Кофе', drinks);
+  final tea = await newDish(branchB1, drinks, 'Чай');
+  final latte = await newDish(branchB1, coffee, 'Латте');
+  // Во втором филиале «напитки» уже есть — со строчной буквы
+  final drinksB = await newCat(branchB, 'напитки');
+
+  (s, r) = await call(
+    'POST',
+    '/api/admin/products/copy',
+    token: tb,
+    body: {
+      'product_ids': [tea, latte],
+      'to_branch_id': branchB,
+    },
+  );
+  expect(
+    'копия 2 блюд: скопировано 2, создана только подкатегория «Кофе»',
+    s == 200 &&
+        r['copied'] == 2 &&
+        r['skipped'] == 0 &&
+        r['categories_created'] == 1,
+    r,
+  );
+  (s, r) = await call(
+    'GET',
+    '/api/admin/categories?branch_id=$branchB',
+    token: tb,
+  );
+  final cats = r as List;
+  final coffeeB = cats.where((c) => c['name'] == 'Кофе').toList();
+  expect(
+    'подкатегория создана внутри существующих «напитков»',
+    coffeeB.length == 1 &&
+        coffeeB.first['parent_id'] == drinksB &&
+        cats.where((c) => '${c['name']}'.toLowerCase() == 'напитки').length ==
+            1,
+    cats,
+  );
+  (s, r) = await call(
+    'GET',
+    '/api/admin/products?branch_id=$branchB',
+    token: tb,
+  );
+  final latteB = (r as List).firstWhere((d) => d['name'] == 'Латте');
+  expect(
+    'копия: та же картинка, цена и перевод, своя категория',
+    latteB['image_url'] == 'https://example.com/Латте.jpg' &&
+        latteB['price'] == 150 &&
+        latteB['i18n']['en']['name'] == 'Латте EN' &&
+        latteB['category_id'] == coffeeB.first['id'] &&
+        latteB['id'] != latte,
+    latteB,
+  );
+  (s, r) = await call(
+    'POST',
+    '/api/admin/products/copy',
+    token: tb,
+    body: {
+      'product_ids': [tea, latte],
+      'to_branch_id': branchB,
+    },
+  );
+  expect(
+    'повтор: всё пропущено, новых категорий нет',
+    s == 200 &&
+        r['copied'] == 0 &&
+        r['skipped'] == 2 &&
+        r['categories_created'] == 0,
+    r,
+  );
+  for (final (what, body, code) in [
+    (
+      'блюдо чужого кафе → 404',
+      {
+        'product_ids': [prodA],
+        'to_branch_id': branchB,
+      },
+      404,
+    ),
+    (
+      'в тот же филиал → 400',
+      {
+        'product_ids': [tea],
+        'to_branch_id': branchB1,
+      },
+      400,
+    ),
+    (
+      'пустой список → 400',
+      {'product_ids': <String>[], 'to_branch_id': branchB},
+      400,
+    ),
+    (
+      'в филиал чужого кафе → 404',
+      {
+        'product_ids': [tea],
+        'to_branch_id': branchA,
+      },
+      404,
+    ),
+  ]) {
+    (s, r) = await call(
+      'POST',
+      '/api/admin/products/copy',
+      token: tb,
+      body: body,
+    );
+    expect('копирование: $what', s == code, '$s $r');
+  }
+
   // Повышение лимита
   (s, r) = await call(
     'PATCH',
