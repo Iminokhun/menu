@@ -98,6 +98,14 @@ DATA_DIR=import-data dart run bin/import_supabase.dart \
   https://ПРОЕКТ.supabase.co КЛЮЧ_anon "Андалус" 3
 ```
 
+Затем полное меню филиала `center` — из выгрузки номенклатуры 1С. Оно
+заменяет меню из Supabase; переводы и 3D-модели совпавших по названию блюд
+сохраняются:
+
+```sh
+DATA_DIR=import-data dart run bin/import_1c.dart D:/nomenclature2.json center
+```
+
 Получится папка `server/import-data` (база и фото). У кафе сразу пробный
 срок 14 дней — оплату потом ставите в главной админке. Перенесите папку на
 сервер:
