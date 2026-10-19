@@ -143,7 +143,7 @@ Future<void> main() async {
       'категория совпала со старой («Фаст-Фуд»): перевод сохранён, фото из 1С, порядок как в 1С',
       fast['i18n'] == '{"en":{"name":"Fast food"}}' &&
           fast['sort_order'] == 0 &&
-          (fast['image_url'] as String).endsWith('/1c_g1.jpg'),
+          (fast['image_url'] as String).endsWith('/1c_b_g1.jpg'),
       fast,
     );
     expect(
@@ -192,7 +192,16 @@ Future<void> main() async {
           exists('shared.jpg') &&
           exists('borsch.jpg') &&
           exists('model.glb') &&
-          exists('1c_d2.jpg'),
+          exists('1c_b_d2.jpg'),
+    );
+
+    // Та же выгрузка (те же коды 1С) во второй филиал — фото первого целы
+    await import1c(db, dataDir: dataDir, branchSlug: 'ntcn', json: export);
+    expect(
+      'коды 1С совпали в двух филиалах: у каждого свои файлы фото',
+      exists('1c_b_d2.jpg') &&
+          exists('1c_b2_d2.jpg') &&
+          dish('Латте')['image_url'] == '/uploads/c/1c_b_d2.jpg',
     );
     db.close();
   } finally {

@@ -120,7 +120,9 @@ Future<Import1cReport> import1c(
         report.warnings.add('«${i.name}»: фото не читается — без фото');
         continue;
       }
-      final name = '1c_${_safe(i.code)}.${photo.ext}';
+      // Филиал в имени: у выгрузок разных филиалов коды 1С могут совпасть,
+      // а папка с файлами у кафе одна — фото одного заменили бы другие
+      final name = '1c_${_safe(branchId)}_${_safe(i.code)}.${photo.ext}';
       final file = File('${uploads.path}/$name');
       await file.writeAsBytes(photo.bytes);
       written.add(file);
