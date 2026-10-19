@@ -3,9 +3,9 @@
 #   docker compose up -d --build
 #
 # Два варианта, выбираются в .env:
-# - на сервере уже есть nginx (другой проект занял 80/443) — меню слушает
-#   только 127.0.0.1:MENU_PORT, домен на него пересылает тот nginx
-#   (готовый блок — nginx-menu.conf);
+# - на сервере уже есть nginx (другой проект занял 80/443) — меню не
+#   открывает ни одного порта на сервере, тот nginx достаёт до него по общей
+#   сети Docker `edge` как cafe-menu:8090 (готовый блок — nginx-menu.conf);
 # - сервер только для меню — COMPOSE_PROFILES=caddy, тогда HTTPS делает
 #   свой Caddy на 80/443.
 
@@ -23,9 +23,13 @@ services:
       # переживают обновления и видны для резервных копий
       - ./data:/data
       - ./backups:/backups
-    # Только для самого сервера: снаружи меню доступно через nginx/Caddy
-    ports:
-      - "127.0.0.1:${MENU_PORT:-8090}:8090"
+    # Портов на сервере меню не открывает. Своя сеть — для Caddy и команд
+    # compose; edge — общая с nginx другого проекта, имя cafe-menu в ней
+    # не спутать с чужими контейнерами
+    networks:
+      default:
+      edge:
+        aliases: [cafe-menu]
     # Сервер делит память с другими проектами, свопа нет. Меню хватает
     # ~100 МБ, запас — на сжатие крупных фото
     mem_limit: 512m
@@ -59,6 +63,14 @@ services:
       options:
         max-size: "10m"
         max-file: "5"
+
+networks:
+  # Общая сеть с nginx другого проекта. Ничья — создаётся один раз руками,
+  # чтобы ни один из проектов не удалил её при своём `docker compose down`:
+  #   docker network create edge
+  edge:
+    external: true
+    name: edge
 
 volumes:
   caddy_data:

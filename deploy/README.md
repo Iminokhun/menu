@@ -35,20 +35,24 @@ curl -fsSL https://get.docker.com | sh
 Наружу должны быть открыты только порты 80 и 443 (и 22 для SSH).
 
 **Кто держит 80/443.** Если на сервере уже работает другой проект со своим
-nginx (как Prosto ERP), Caddy не запускается: меню слушает только
-`127.0.0.1:8090`, а домен меню на него пересылает тот nginx. Ему добавляют
+nginx (как Prosto ERP), Caddy не запускается. Меню не открывает на сервере
+ни одного порта: тот nginx достаёт до него по общей сети Docker `edge` по
+имени `cafe-menu:8090`. Сеть создаётся один раз и ничья — её не удалит
+`docker compose down` ни одного из проектов:
+
+```sh
+docker network create edge
+```
+
+В nginx того проекта: сеть `edge` в его `docker-compose` (как `external`),
 блок из `nginx-menu.conf` и сертификат для домена меню. Это правка чужого
 работающего сайта — порядок такой:
 
 1. сертификат для домена меню (тем же способом, что у того проекта);
 2. блок `nginx-menu.conf` в конфиг nginx, домен и пути сертификата — свои;
 3. `nginx -t` — проверка конфига; только при «test is successful» —
-   перезагрузка nginx (`nginx -s reload`, без перезапуска контейнера);
+   применение;
 4. сразу проверить, что сайт того проекта открывается.
-
-Если nginx того проекта сидит в контейнере без `network_mode: host`, адрес
-`127.0.0.1:8090` из него не виден — вместо него в `proxy_pass` ставится
-адрес, к которому этот контейнер может достучаться (решается по месту).
 
 Если сервер только для меню — в `.env` раскомментируйте
 `COMPOSE_PROFILES=caddy`, и HTTPS сделает свой Caddy, nginx не нужен.
@@ -107,10 +111,11 @@ scp -r import-data/. root@IP-сервера:/srv/menu/deploy/data/
 **1.7. Запуск** (первая сборка — 10–15 минут):
 
 ```sh
+docker network create edge   # если уже есть — «already exists», это нормально
 docker compose up -d --build
 docker compose ps          # menu должен стать healthy (и caddy — running,
                            # если включён)
-curl -fsS http://127.0.0.1:8090/api/health   # {"status":"ok",...}
+docker compose exec menu curl -fsS http://localhost:8090/api/health  # {"status":"ok",...}
 ```
 
 После этого — пересылка с домена (nginx или Caddy, см. выше).
