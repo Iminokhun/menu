@@ -143,7 +143,9 @@ Future<void> main() async {
       'категория совпала со старой («Фаст-Фуд»): перевод сохранён, фото из 1С, порядок как в 1С',
       fast['i18n'] == '{"en":{"name":"Fast food"}}' &&
           fast['sort_order'] == 0 &&
-          (fast['image_url'] as String).endsWith('/1c_b_g1.jpg'),
+          RegExp(
+            r'^/uploads/c/1c_b_g1_[0-9a-f]{8}\.jpg$',
+          ).hasMatch(fast['image_url'] as String),
       fast,
     );
     expect(
@@ -186,22 +188,86 @@ Future<void> main() async {
           1,
     );
     bool exists(String f) => File('${files.path}/$f').existsSync();
+    // Имя файла фото блюда филиала: /uploads/c/<имя>
+    String photoOf(String name, [String branch = 'b']) =>
+        (db.select(
+                  'select image_url from products where branch_id = ? and name = ?',
+                  [branch, name],
+                ).first['image_url']
+                as String)
+            .split('/')
+            .last;
+    final latte = photoOf('Латте');
     expect(
       'файлы: ненужное старое фото удалено, нужные и общие с другим филиалом остались',
       !exists('old.jpg') &&
           exists('shared.jpg') &&
           exists('borsch.jpg') &&
           exists('model.glb') &&
-          exists('1c_b_d2.jpg'),
+          exists(latte),
     );
 
     // Та же выгрузка (те же коды 1С) во второй филиал — фото первого целы
     await import1c(db, dataDir: dataDir, branchSlug: 'ntcn', json: export);
     expect(
       'коды 1С совпали в двух филиалах: у каждого свои файлы фото',
-      exists('1c_b_d2.jpg') &&
-          exists('1c_b2_d2.jpg') &&
-          dish('Латте')['image_url'] == '/uploads/c/1c_b_d2.jpg',
+      exists(latte) &&
+          photoOf('Латте') == latte &&
+          photoOf('Латте', 'b2').startsWith('1c_b2_d2_') &&
+          exists(photoOf('Латте', 'b2')),
+    );
+
+    // Та же выгрузка ещё раз — те же файлы: имя зависит от содержимого
+    await import1c(db, dataDir: dataDir, branchSlug: 'center', json: export);
+    expect(
+      'повторная загрузка того же фото — то же имя, файл на месте',
+      photoOf('Латте') == latte && exists(latte),
+      photoOf('Латте'),
+    );
+
+    // Новое фото Латте — новое имя
+    final other = base64Encode(img.encodeJpg(img.Image(width: 50, height: 50)));
+    final changed = [
+      for (final i in export)
+        i['Код'] == 'd2' ? item('d2', 'Латте', parent: 'g3', photo: other) : i,
+    ];
+
+    // Загрузка сорвалась уже после записи фото — фото текущего меню целы
+    db.execute(
+      "create temp trigger fail before insert on products begin select raise(abort, 'сбой'); end",
+    );
+    error = null;
+    try {
+      await import1c(db, dataDir: dataDir, branchSlug: 'center', json: changed);
+    } on SqliteException catch (e) {
+      error = e;
+    }
+    db.execute('drop trigger fail');
+    expect(
+      'сбой загрузки: меню прежнее, его фото не удалены, новые файлы убраны',
+      error != null &&
+          photoOf('Латте') == latte &&
+          exists(latte) &&
+          files.listSync().where((f) => f.path.contains('1c_b_d2_')).length ==
+              1,
+      '$error ${files.listSync()}',
+    );
+
+    // Карта глубины и уменьшенная копия старого фото
+    File('${files.path}/$latte.depth.png').writeAsStringSync('d');
+    final thumb = File('$dataDir/thumbs/800/c/$latte')
+      ..createSync(recursive: true);
+    await import1c(db, dataDir: dataDir, branchSlug: 'center', json: changed);
+    final fresh = photoOf('Латте');
+    expect(
+      'фото заменили: новое имя, старое фото с картой глубины и копией удалены',
+      fresh != latte &&
+          fresh.startsWith('1c_b_d2_') &&
+          exists(fresh) &&
+          !exists(latte) &&
+          !exists('$latte.depth.png') &&
+          !thumb.existsSync(),
+      '$fresh ${files.listSync()}',
     );
     db.close();
   } finally {

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 import 'db.dart';
@@ -101,7 +102,7 @@ Future<Import1cReport> import1c(
   final cafeId = branch.first['cafe_id'] as String;
 
   // Фото — до транзакции: сжатие долгое, а база всё это время была бы
-  // заперта. Если загрузка сорвётся, записанные файлы удаляются.
+  // заперта. Если загрузка сорвётся, созданные ею файлы удаляются.
   final uploads = Directory('$dataDir/uploads/$cafeId');
   await uploads.create(recursive: true);
   final written = <File>[];
@@ -121,11 +122,18 @@ Future<Import1cReport> import1c(
         continue;
       }
       // Филиал в имени: у выгрузок разных филиалов коды 1С могут совпасть,
-      // а папка с файлами у кафе одна — фото одного заменили бы другие
-      final name = '1c_${_safe(branchId)}_${_safe(i.code)}.${photo.ext}';
+      // а папка с файлами у кафе одна — фото одного заменили бы другие.
+      // Отпечаток содержимого: файл по имени никогда не меняется (его
+      // кэшируют браузеры и ночные копии), новое фото — новое имя. То же
+      // фото при повторной загрузке — тот же файл, он уже есть: его не
+      // трогаем, и при сбое загрузки он не удаляется
+      final hash = sha1.convert(photo.bytes).toString().substring(0, 8);
+      final name = '1c_${_safe(branchId)}_${_safe(i.code)}_$hash.${photo.ext}';
       final file = File('${uploads.path}/$name');
-      await file.writeAsBytes(photo.bytes);
-      written.add(file);
+      if (!await file.exists()) {
+        await file.writeAsBytes(photo.bytes);
+        written.add(file);
+      }
       photoUrl[i.code] = '/uploads/$cafeId/$name';
     }
     report.photos = photoUrl.length;
@@ -270,7 +278,11 @@ void _deleteUnused(
       [path],
     );
     if (used.isNotEmpty) continue;
-    for (final f in [File('$dataDir$path'), File('$dataDir$path.gz')]) {
+    for (final f in [
+      File('$dataDir$path'),
+      File('$dataDir$path.gz'),
+      ...photoCopies(dataDir, path),
+    ]) {
       if (f.existsSync()) f.deleteSync();
     }
   }
