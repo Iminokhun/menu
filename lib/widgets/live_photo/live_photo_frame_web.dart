@@ -1,3 +1,5 @@
+import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
 import 'dart:ui_web' as ui_web;
 
 import 'package:flutter/widgets.dart';
@@ -17,6 +19,7 @@ class LivePhotoFrame extends StatefulWidget {
 
 class _LivePhotoFrameState extends State<LivePhotoFrame> {
   late final String _viewType = 'live-photo-${identityHashCode(this)}';
+  web.HTMLIFrameElement? _frame;
 
   @override
   void initState() {
@@ -25,7 +28,7 @@ class _LivePhotoFrameState extends State<LivePhotoFrame> {
         '?img=${Uri.encodeQueryComponent(widget.imageUrl)}'
         '&bg=${widget.background.replaceFirst('#', '')}';
     ui_web.platformViewRegistry.registerViewFactory(_viewType, (int _) {
-      return web.HTMLIFrameElement()
+      return _frame = web.HTMLIFrameElement()
         ..src = src
         // наклон телефона внутри iframe разрешается явно
         ..allow = 'accelerometer; gyroscope'
@@ -33,6 +36,18 @@ class _LivePhotoFrameState extends State<LivePhotoFrame> {
         ..style.width = '100%'
         ..style.height = '100%';
     });
+  }
+
+  @override
+  void dispose() {
+    // Как и в приложении: WebGL страницы отпускается сразу, а не когда
+    // браузер соберёт убранный iframe. Страница могла ещё не загрузиться —
+    // тогда останавливать нечего
+    final page = _frame?.contentWindow as JSObject?;
+    if (page != null && page.has('stopLivePhoto')) {
+      page.callMethod<JSAny?>('stopLivePhoto'.toJS);
+    }
+    super.dispose();
   }
 
   @override

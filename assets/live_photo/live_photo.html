@@ -234,8 +234,22 @@
       lastInput = Infinity;
     }
 
+    // Гость ушёл со страницы — кадры больше не рисуются, видеопамять
+    // отдаётся сразу, а не когда встроенный браузер когда-нибудь закроется
+    let raf = 0, stopped = false;
+    window.stopLivePhoto = () => {
+      stopped = true;
+      cancelAnimationFrame(raf);
+      photo.dispose();
+      depth.tex.dispose();
+      material.dispose();
+      renderer.dispose();
+      renderer.forceContextLoss();
+    };
+
     const tilt = uniforms.uTilt.value;
     function frame(t) {
+      if (stopped) return;
       // никто не трогает — блюдо само слегка покачивается, видно, что оно «живое»
       if (now() - lastInput > 2500) {
         target.set(Math.sin(t / 1400) * 0.7, Math.cos(t / 1900) * 0.45);
@@ -245,9 +259,9 @@
       if (target.length() > 1) target.normalize();
       tilt.lerp(target, 0.08);
       renderer.render(scene, camera);
-      requestAnimationFrame(frame);
+      raf = requestAnimationFrame(frame);
     }
-    requestAnimationFrame(frame);
+    raf = requestAnimationFrame(frame);
   }
 
   const q = new URLSearchParams(location.search);

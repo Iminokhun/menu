@@ -35,5 +35,18 @@ class _LivePhotoFrameState extends State<LivePhotoFrame> {
   }
 
   @override
+  void dispose() {
+    // Встроенный браузер живёт, пока Dart не соберёт контроллер, и всё это
+    // время крутит WebGL и держит фото в памяти. Останавливаем сами и
+    // открываем пустую страницу. Страница могла не успеть загрузиться —
+    // тогда останавливать нечего, ошибку не показываем
+    _controller
+        .runJavaScript('window.stopLivePhoto && stopLivePhoto()')
+        .whenComplete(() => _controller.loadRequest(Uri.parse('about:blank')))
+        .ignore();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) => WebViewWidget(controller: _controller);
 }
