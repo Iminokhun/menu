@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cached_network_image_platform_interface/cached_network_image_platform_interface.dart';
 
+import '../photo_url.dart';
 import '../theme/current_theme.dart';
 
 /// Виджет для отображения изображений с сервера меню.
@@ -24,11 +26,25 @@ class AuthImage extends StatelessWidget {
     // У блюда нет фото или оно не загрузилось — спокойная заглушка, а не
     // значок «картинка сломана»: гость видит оформленную карточку
     if (url.isEmpty) return _NoPhoto(width: width, height: height);
+    return LayoutBuilder(builder: (context, c) => _image(context, c));
+  }
+
+  Widget _image(BuildContext context, BoxConstraints c) {
+    // Фото разжимается в размер места на экране, а не в полный (1080×1080
+    // из 1С — почти 5 МБ памяти на каждое): иначе память кончается
+    final w = width ?? c.maxWidth, h = height ?? c.maxHeight;
+    final side = [w, h].where((v) => v.isFinite).fold<double>(0, (a, b) => a > b ? a : b);
+    final decode = side > 0 ? (side * MediaQuery.devicePixelRatioOf(context)).round() : null;
     return CachedNetworkImage(
-      imageUrl: url,
+      imageUrl: sizedPhotoUrl(url, decode),
       width: width,
       height: height,
       fit: fit,
+      memCacheWidth: decode,
+      // В браузере фото скачивается и разжимается самим Flutter, как в
+      // приложении. По умолчанию (HtmlImage) его разжимает браузер, и фото,
+      // которое пролежало под другим экраном, после возврата рисуется чёрным
+      imageRenderMethodForWeb: ImageRenderMethodForWeb.HttpGet,
       fadeInDuration: const Duration(milliseconds: 220),
       fadeOutDuration: const Duration(milliseconds: 120),
       // Пока грузится — ровный фон без индикатора: в сетке из десятков

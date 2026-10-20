@@ -1,14 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/widgets.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api/api_client.dart';
 import 'models/branch.dart';
 import 'models/product.dart';
+import 'photo_url.dart';
 
 /// Меню филиала вместе с тем, откуда оно взято.
 class MenuData {
@@ -227,24 +228,29 @@ class MenuStore {
   }
 
   /// Фото скачиваются заранее, пока есть сеть: без интернета на планшете
-  /// показываются и блюда, которые ещё ни разу не открывали. В браузере
-  /// фото и так кэширует сам браузер.
+  /// показываются и блюда, которые ещё ни разу не открывали. Только на
+  /// планшете кафе: телефону гостя скачивать всё меню (сотни фото, ~100 МБ)
+  /// — это его трафик, и фото на экране ждали бы в общей очереди. В
+  /// браузере фото и так кэширует сам браузер.
+  ///
+  /// Только на диск, в тот же кэш, откуда их берут карточки: разжимать
+  /// сотни фото в память заранее незачем — память забивается, и под её
+  /// нехваткой фото на экране перестают загружаться.
   void _precacheImages(MenuData menu) {
-    if (kIsWeb) return;
+    if (kIsWeb || appFlavor != 'kiosk') return;
     final bg = menu.branch.style.bgUrl;
     final urls = {
       menu.branch.logoUrl,
       if (bg != 'none') bg, // фон кафе, 'none' — однотонный
       for (final p in menu.items) p.imageUrl,
     }..remove('');
-    for (final url in urls) {
-      final stream = CachedNetworkImageProvider(url).resolve(ImageConfiguration.empty);
-      late final ImageStreamListener listener;
-      listener = ImageStreamListener(
-        (_, __) => stream.removeListener(listener),
-        onError: (_, __) => stream.removeListener(listener),
-      );
-      stream.addListener(listener);
+    // Те же адреса, что попросит экран: уменьшенная копия — для карточек,
+    // само фото — для открытого блюда
+    final files = {for (final url in urls) ...[sizedPhotoUrl(url, thumbPx), url]};
+    for (final url in files) {
+      // Уже скачанное не качается заново. Не скачалось — не страшно:
+      // карточка попробует сама, когда её откроют
+      DefaultCacheManager().getSingleFile(url).then<void>((_) {}, onError: (_) {});
     }
   }
 }
