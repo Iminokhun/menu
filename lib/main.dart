@@ -104,7 +104,7 @@ class CafeAndalusRoot extends StatelessWidget {
             valueListenable: appTheme,
             builder: (context, config, child) {
               return MaterialApp(
-                title: 'Cafe Andalus',
+                title: 'menu.kg',
                 debugShowCheckedModeBanner: false,
                 locale: locale,
                 supportedLocales: [

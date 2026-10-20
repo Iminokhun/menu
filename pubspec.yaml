@@ -66,3 +66,9 @@ flutter_launcher_icons:
   adaptive_icon_background: "#1E1E1E"
   # Поля уже в самой картинке: знак — 60% её стороны, видна середина 2/3
   adaptive_icon_foreground_inset: 0
+  # Сайт: значок вкладки и иконка «на главный экран»
+  web:
+    generate: true
+    image_path: assets/icon/icon.png
+    background_color: "#1E1E1E"
+    theme_color: "#1E1E1E"
