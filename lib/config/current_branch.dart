@@ -9,6 +9,11 @@ import '../models/branch.dart';
 /// свой APK, и обновлять их пришлось бы по отдельности.
 final ValueNotifier<Branch?> currentBranch = ValueNotifier(null);
 
+/// Гость открыл меню из каталога на главной сайта, а не по QR-коду:
+/// ему показывается кнопка «Все кафе». Пришедшему по QR чужие кафе
+/// не предлагаются.
+final ValueNotifier<bool> openedFromCatalog = ValueNotifier(false);
+
 const _prefsKey = 'branch_slug';
 
 /// Филиал из ссылки: `?branch=center`. Так работает веб по QR-коду.
@@ -33,6 +38,10 @@ Future<void> saveBranchSlug(String slug) async {
 /// Ссылка приоритетнее сохранённой настройки: гость, отсканировавший
 /// QR-код второго филиала, должен попасть именно туда, даже если на его
 /// телефоне когда-то открывался первый.
+///
+/// В вебе филиал берётся только из ссылки: адрес без `?branch=` — это
+/// главная с каталогом кафе, а не меню, открытое здесь когда-то раньше.
 Future<String?> resolveBranchSlug() async {
+  if (kIsWeb) return branchSlugFromUrl();
   return branchSlugFromUrl() ?? await savedBranchSlug();
 }

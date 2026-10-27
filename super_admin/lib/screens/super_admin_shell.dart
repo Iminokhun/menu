@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../api_client.dart';
+import 'catalog_dialog.dart';
 import 'payment_dialog.dart';
 
 /// Главная админка платформы: кафе, их логины и лимит филиалов.
@@ -576,6 +577,29 @@ class _SuperAdminShellState extends State<SuperAdminShell> {
                     if (await showPaymentDialog(context, cafe)) _load();
                   },
                   child: const Text('Оплата', style: TextStyle(color: _accent)),
+                ),
+              ],
+            );
+          }),
+
+          // Каталог на главной сайта: показывается ли кафе гостям
+          Builder(builder: (_) {
+            final listed = cafe['show_in_catalog'] == true;
+            final color = listed ? Colors.green : Colors.white38;
+            return Row(
+              children: [
+                Icon(Icons.restaurant_menu, color: color, size: 18),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(listed ? 'В каталоге на главной' : 'Не в каталоге',
+                      style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.w600)),
+                ),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: () async {
+                    if (await showCatalogDialog(context, cafe)) _load();
+                  },
+                  child: const Text('Каталог', style: TextStyle(color: _accent)),
                 ),
               ],
             );

@@ -16,6 +16,7 @@ import '../l10n/app_localizations.dart';
 import '../l10n/translation_service.dart';
 import '../widgets/lang_switcher.dart';
 import '../responsive.dart';
+import 'catalog_screen.dart';
 import 'menu_screen.dart';
 import 'search_screen.dart';
 import 'admin/admin_shell.dart';
@@ -259,6 +260,24 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     );
   }
 
+  /// Назад в каталог кафе — только если гость пришёл из каталога.
+  /// Пришедшему по QR-коду чужие кафе не предлагаются.
+  Widget _catalogButton(ThemeConfig config) {
+    if (!openedFromCatalog.value) return const SizedBox.shrink();
+    return TextButton.icon(
+      onPressed: backToCatalog,
+      icon: Icon(Icons.arrow_back_rounded, size: 18, color: config.accent),
+      label: Text(
+        'Все кафе',
+        style: GoogleFonts.manrope(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: config.accent,
+        ),
+      ),
+    );
+  }
+
   Widget _searchButton(ThemeConfig config) {
     return IconButton(
       tooltip: AppLocalizations.of(context).search,
@@ -415,6 +434,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
             crossAxisAlignment: WrapCrossAlignment.center,
             spacing: 4,
             children: [
+              _catalogButton(config),
               LangSwitcher(config: config),
               _searchButton(config),
               _refreshButton(config),
@@ -552,6 +572,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
+              _catalogButton(config),
+              const Spacer(),
               LangSwitcher(config: config),
               const SizedBox(width: 8),
               _searchButton(config),

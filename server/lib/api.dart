@@ -37,6 +37,7 @@ const _branchFields = {
   'sort_order',
   'languages',
   ...styleColumns,
+  ...locationColumns,
 };
 const _categoryFields = {
   'parent_id',
@@ -64,7 +65,7 @@ const _jsonFields = {'portions', 'languages', 'i18n'};
 
 /// Поля с адресами файлов: в базе хранится путь `/uploads/...`,
 /// наружу отдаётся полный адрес. Так база не привязана к домену сервера.
-const _urlFields = {'image_url', 'logo_url', 'model_url', 'bg_url'};
+const _urlFields = {'image_url', 'logo_url', 'model_url', 'bg_url', 'cover_url'};
 
 /// Допустимые значения оформления. Пустая строка — «как по умолчанию».
 /// Список совпадает с вариантами в приложении (lib/models/branch.dart).
@@ -85,6 +86,12 @@ const _styleChoices = {
 final _hexColor = RegExp(r'^#[0-9a-fA-F]{6}$');
 
 const _imageExts = {'jpg', 'jpeg', 'png', 'webp', 'gif'};
+
+/// Сколько символов в адресе и часах работы филиала
+const _maxLocationText = 200;
+
+/// Сколько символов в описании кафе для каталога
+const _maxCafeDescription = 300;
 const _maxUploadBytes = 10 * 1024 * 1024;
 
 /// 3D-модели блюд (.glb) тяжелее фото — им свой лимит
@@ -153,6 +160,7 @@ class Api {
     // ---------- Гость ----------
     r.get('/api/public/branch/<slug>', _publicBranch);
     r.get('/api/public/menu/<branchId>', _publicMenu);
+    r.get('/api/public/cafes', _publicCafes);
 
     // ---------- Вход ----------
     r.post('/api/auth/login', _login);
@@ -187,6 +195,7 @@ class Api {
     r.post('/api/super/cafes/<id>/users', _createCafeUser);
     r.get('/api/super/cafes/<id>/payments', _listPayments);
     r.post('/api/super/cafes/<id>/payments', _addPayment);
+    r.post('/api/super/cafes/<id>/upload', _uploadCafeImage);
     r.patch('/api/super/users/<id>', _updateUser);
     r.delete('/api/super/users/<id>', _deleteUser);
 
@@ -436,6 +445,32 @@ class Api {
           400,
           'Языки: хотя бы один, без повторов, из списка ${menuLanguages.join(', ')}',
         );
+      case 'address' || 'hours':
+        if (v is String) {
+          final t = v.trim();
+          if (t.length > _maxLocationText) {
+            throw ApiError(400, 'Не длиннее $_maxLocationText символов');
+          }
+          return t;
+        }
+      case 'map_url':
+        // Ссылка открывается у гостя — только обычный https-адрес, иначе
+        // под видом карты можно было бы подсунуть javascript: или файл
+        if (v is String) {
+          final t = v.trim();
+          final uri = Uri.tryParse(t);
+          if (t.isEmpty) return t;
+          if (uri != null &&
+              uri.scheme == 'https' &&
+              uri.host.isNotEmpty &&
+              t.length <= 1000) {
+            return t;
+          }
+          throw ApiError(
+            400,
+            'Ссылка на карту должна начинаться с https://',
+          );
+        }
       case 'i18n':
         return _validI18n(v);
       case 'portions':
@@ -554,6 +589,43 @@ class Api {
       throw ApiError(403, _unpaidGuest, code: 'unpaid');
     }
     return _json(_out(req, rows.first));
+  }
+
+  /// Каталог на главной сайта: кафе, которые superadmin включил в него,
+  /// с их филиалами. Заблокированные и неоплаченные (меню у гостей
+  /// выключено) не показываются, как и кафе без единого работающего филиала.
+  Response _publicCafes(Request req) {
+    final cafes = db.select('''
+      select id, name, description, logo_url, cover_url, plan, paid_until
+        from cafes where is_active = 1 and show_in_catalog = 1
+       order by name collate nocase''');
+    final branches = db.select('''
+      select b.cafe_id, b.slug, b.name, b.slogan, b.logo_url, b.phone,
+             b.address, b.map_url, b.hours from branches b
+        join cafes c on c.id = b.cafe_id
+       where b.is_active = 1 and c.is_active = 1 and c.show_in_catalog = 1
+       order by b.sort_order, b.name''');
+    final out = <Map<String, Object?>>[];
+    for (final c in cafes) {
+      final access = cafeAccess(
+        c['plan'] as String,
+        c['paid_until'] as String,
+        _today(),
+      );
+      if (access.access == Access.expired) continue;
+      final own = branches.where((b) => b['cafe_id'] == c['id']).map((b) {
+        final m = _out(req, b)..remove('cafe_id');
+        return m;
+      }).toList();
+      if (own.isEmpty) continue;
+      out.add(
+        _out(req, c)
+          ..remove('plan')
+          ..remove('paid_until')
+          ..['branches'] = own,
+      );
+    }
+    return _json(out);
   }
 
   Response _publicMenu(Request req, String branchId) {
@@ -1075,18 +1147,51 @@ class Api {
         'Можно загружать фото (jpg, png, webp, gif) или 3D-модель (glb)',
       );
     }
-    if (!_uploads.tryAcquire(u.cafeId!)) {
+    final prefix = (req.url.queryParameters['prefix'] ?? '').replaceAll(
+      RegExp(r'[^a-zA-Z0-9_-]'),
+      '',
+    );
+    final path = await _storeUpload(req, u.cafeId!, ext, prefix);
+    return _json({'path': path, 'url': '${_base(req)}$path'}, status: 201);
+  }
+
+  /// Логотип или обложка кафе для каталога — ставит superadmin.
+  /// `?kind=logo|cover`, `?ext=` — как у [_upload], но только фото.
+  Future<Response> _uploadCafeImage(Request req, String id) async {
+    _superadmin(req);
+    _cafeById(id);
+    final kind = req.url.queryParameters['kind'];
+    final column = switch (kind) {
+      'logo' => 'logo_url',
+      'cover' => 'cover_url',
+      _ => throw ApiError(400, 'kind: logo или cover'),
+    };
+    final ext = (req.url.queryParameters['ext'] ?? 'jpg').toLowerCase();
+    if (!_imageExts.contains(ext)) {
+      throw ApiError(400, 'Можно загружать фото (jpg, png, webp, gif)');
+    }
+    final path = await _storeUpload(req, id, ext, 'cafe-$kind-');
+    _update('cafes', id, {column: path});
+    return _json(_cafeById(id), status: 201);
+  }
+
+  /// Принимает тело запроса и кладёт файл в папку кафе [cafeId].
+  /// Фото сжимается, 3D-модель проверяется и по возможности сжимается gzip.
+  /// Возвращает путь `/uploads/...`.
+  Future<String> _storeUpload(
+    Request req,
+    String cafeId,
+    String ext,
+    String prefix,
+  ) async {
+    final isModel = _modelExts.contains(ext);
+    if (!_uploads.tryAcquire(cafeId)) {
       throw ApiError(
         429,
         'Слишком много загрузок подряд — подождите несколько минут',
       );
     }
     final maxBytes = isModel ? _maxModelBytes : _maxUploadBytes;
-    final prefix = (req.url.queryParameters['prefix'] ?? '').replaceAll(
-      RegExp(r'[^a-zA-Z0-9_-]'),
-      '',
-    );
-
     final tooBig = ApiError(413, 'Файл больше ${maxBytes ~/ (1024 * 1024)} МБ');
     // Заявленный размер проверяем до чтения: файл сверх лимита даже не
     // начинаем принимать
@@ -1123,7 +1228,7 @@ class Api {
     }
 
     final name = '$prefix${DateTime.now().microsecondsSinceEpoch}.$storedExt';
-    final dir = Directory('$uploadsDir/${u.cafeId}');
+    final dir = Directory('$uploadsDir/$cafeId');
     // Место на диске общее для всех кафе — одно не должно занять его целиком
     final used = usedBytes(dir);
     if (used + stored.length > uploadQuotaBytes) {
@@ -1137,8 +1242,7 @@ class Api {
     await dir.create(recursive: true);
     // Сжатая модель лежит как x.glb.gz, а адрес у неё x.glb — см. uploadsHandler
     await File('${dir.path}/$name${gzipped ? '.gz' : ''}').writeAsBytes(stored);
-    final path = '/uploads/${u.cafeId}/$name';
-    return _json({'path': path, 'url': '${_base(req)}$path'}, status: 201);
+    return '/uploads/$cafeId/$name';
   }
 
   // ======================================================================
@@ -1259,6 +1363,28 @@ class Api {
     }
     if (body.containsKey('is_active')) {
       data['is_active'] = toSql(body['is_active'] == true);
+    }
+    if (body.containsKey('show_in_catalog')) {
+      data['show_in_catalog'] = toSql(body['show_in_catalog'] == true);
+    }
+    if (body.containsKey('description')) {
+      final text = body['description'];
+      if (text is! String) throw ApiError(400, 'Описание — текстом');
+      final t = text.trim();
+      if (t.length > _maxCafeDescription) {
+        throw ApiError(
+          400,
+          'Описание — не длиннее $_maxCafeDescription символов',
+        );
+      }
+      data['description'] = t;
+    }
+    // Логотип и обложку можно только убрать: ставятся они загрузкой
+    for (final f in ['logo_url', 'cover_url']) {
+      if (body.containsKey(f)) {
+        if (body[f] != '') throw ApiError(400, 'Картинку — через загрузку');
+        data[f] = '';
+      }
     }
     // Ручная правка срока — если ошиблись при оплате
     if (body.containsKey('plan')) {

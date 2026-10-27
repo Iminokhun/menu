@@ -1002,6 +1002,131 @@ Future<void> main(List<String> args) async {
   );
   expect('несуществующая дата → 400', s == 400, r);
 
+  // Каталог кафе на главной сайта
+  Future<Map?> inCatalog() async {
+    final (s, r) = await call('GET', '/api/public/cafes');
+    if (s != 200) return {'status': s};
+    return (r as List).cast<Map?>().firstWhere(
+      (c) => c!['id'] == cafeA,
+      orElse: () => null,
+    );
+  }
+
+  expect('каталог: без галочки кафе нет', await inCatalog() == null);
+  (s, r) = await call(
+    'PATCH',
+    '/api/super/cafes/$cafeA',
+    token: st,
+    body: {'show_in_catalog': true, 'description': '  Кухня и кофе  '},
+  );
+  expect(
+    'каталог: галочку ставит superadmin',
+    s == 200 && r['show_in_catalog'] == true && r['description'] == 'Кухня и кофе',
+    r,
+  );
+  var listed = await inCatalog();
+  expect(
+    'каталог: кафе есть, с филиалом и без данных оплаты',
+    listed != null &&
+        listed['description'] == 'Кухня и кофе' &&
+        (listed['branches'] as List).any((b) => b['slug'] == slugA) &&
+        !listed.containsKey('paid_until'),
+    listed,
+  );
+  (s, r) = await call(
+    'PATCH',
+    '/api/super/cafes/$cafeA',
+    token: st,
+    body: {'description': 'x' * 301},
+  );
+  expect('каталог: описание длиннее 300 → 400', s == 400, r);
+  final smallPng = img.encodePng(img.Image(width: 64, height: 64));
+  (s, r) = await call(
+    'POST',
+    '/api/super/cafes/$cafeA/upload?kind=logo&ext=png',
+    token: ta,
+    bytes: smallPng,
+  );
+  expect('каталог: админ кафе не может ставить логотип → 403', s == 403, r);
+  (s, r) = await call(
+    'POST',
+    '/api/super/cafes/$cafeA/upload?kind=logo&ext=png',
+    token: st,
+    bytes: smallPng,
+  );
+  expect(
+    'каталог: superadmin загрузил логотип',
+    s == 201 && (r['logo_url'] as String).startsWith('/uploads/$cafeA/'),
+    r,
+  );
+  (s, r) = await call(
+    'POST',
+    '/api/super/cafes/$cafeA/upload?kind=banner&ext=png',
+    token: st,
+    bytes: smallPng,
+  );
+  expect('каталог: неизвестный kind → 400', s == 400, r);
+  listed = await inCatalog();
+  expect(
+    'каталог: логотип полным адресом',
+    listed != null && (listed['logo_url'] as String).startsWith('$base/uploads/'),
+    listed,
+  );
+
+  // Адрес филиала: заполняет кафе, гость видит в каталоге
+  (s, r) = await call(
+    'PATCH',
+    '/api/admin/branches/$branchA',
+    token: ta,
+    body: {
+      'address': '  ул. Киевская 95  ',
+      'map_url': 'https://2gis.kg/bishkek/firm/1',
+      'hours': '10:00–23:00',
+    },
+  );
+  expect(
+    'адрес: кафе сохранило адрес, ссылку на карту и часы',
+    s == 200 &&
+        r['address'] == 'ул. Киевская 95' &&
+        r['map_url'] == 'https://2gis.kg/bishkek/firm/1' &&
+        r['hours'] == '10:00–23:00',
+    r,
+  );
+  for (final bad in [
+    'javascript:alert(1)',
+    'http://2gis.kg/x',
+    'https://',
+    '2gis.kg',
+  ]) {
+    (s, r) = await call(
+      'PATCH',
+      '/api/admin/branches/$branchA',
+      token: ta,
+      body: {'map_url': bad},
+    );
+    expect('адрес: ссылка «$bad» → 400', s == 400, r);
+  }
+  (s, r) = await call(
+    'PATCH',
+    '/api/admin/branches/$branchA',
+    token: ta,
+    body: {'address': 'x' * 201},
+  );
+  expect('адрес: длиннее 200 символов → 400', s == 400, r);
+  listed = await inCatalog();
+  final listedBranch = (listed?['branches'] as List?)?.firstWhere(
+    (b) => b['slug'] == slugA,
+    orElse: () => null,
+  );
+  expect(
+    'адрес: в каталоге у филиала адрес, карта и часы',
+    listedBranch != null &&
+        listedBranch['address'] == 'ул. Киевская 95' &&
+        listedBranch['map_url'] == 'https://2gis.kg/bishkek/firm/1' &&
+        listedBranch['hours'] == '10:00–23:00',
+    listedBranch,
+  );
+
   // Просрочка: 5 дней — льготные, меню работает; 10 дней — выключено
   (s, r) = await call(
     'PATCH',
@@ -1040,6 +1165,7 @@ Future<void> main(List<String> args) async {
     s == 403 && r['code'] == 'unpaid',
     r,
   );
+  expect('каталог: неоплаченного кафе нет', await inCatalog() == null);
   (s, r) = await call('GET', '/api/admin/branches', token: ta);
   expect('админ кафе может смотреть', s == 200, r);
   (s, r) = await call(
@@ -1070,6 +1196,7 @@ Future<void> main(List<String> args) async {
   );
   (s, r) = await call('GET', '/api/public/branch/$slugA');
   expect('после оплаты меню снова открыто', s == 200, r);
+  expect('каталог: после оплаты кафе снова есть', await inCatalog() != null);
 
   // Блокировка пользователя и кафе
   (s, r) = await call(
@@ -1091,6 +1218,7 @@ Future<void> main(List<String> args) async {
   expect('блок кафе: сессия закрыта → 401', s == 401, r);
   (s, r) = await call('GET', '/api/public/branch/$slugA');
   expect('блок кафе: меню гостю недоступно → 404', s == 404, r);
+  expect('каталог: заблокированного кафе нет', await inCatalog() == null);
   (s, r) = await call(
     'POST',
     '/api/auth/login',

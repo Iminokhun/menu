@@ -101,6 +101,19 @@ class ApiClient {
   Future<dynamic> delete(String path) async =>
       _decode(await http.delete(_uri(path), headers: _headers));
 
+  /// Загрузка файла: тело запроса — сами байты (см. сервер, `_upload`)
+  Future<dynamic> upload(String path, List<int> bytes, Map<String, String> query) async =>
+      _decode(await http.post(_uri(path, query),
+          headers: {
+            'content-type': 'application/octet-stream',
+            if (_token != null) 'authorization': 'Bearer $_token',
+          },
+          body: bytes));
+
+  /// Картинка с сервера: в базе лежит путь `/uploads/...`, показывать
+  /// нужно полный адрес
+  String fileUrl(String path) => path.startsWith('/') ? '$serverUrl$path' : path;
+
   /// Список строк из ответа — для экранов, которые работают с Map.
   Future<List<Map<String, dynamic>>> list(String path, [Map<String, String>? query]) async =>
       List<Map<String, dynamic>>.from(await get(path, query) as List);

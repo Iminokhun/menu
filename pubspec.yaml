@@ -53,6 +53,8 @@ flutter:
     - assets/live_photo/
     # Фон тем «Тёмная» и «Светлая» — в приложении, без интернета
     - assets/backgrounds/
+    # Знак menu.kg в шапке каталога кафе на главной сайта
+    - assets/icon/icon.png
 
 # Иконка приложения на телефоне и планшете — знак menu.kg.
 # После замены картинок в assets/icon: dart run flutter_launcher_icons

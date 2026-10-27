@@ -16,6 +16,12 @@ class Branch {
   final String phone;
   final String logoUrl;
 
+  /// Где филиал: улица и дом, ссылка на 2GIS / Google Maps, часы работы.
+  /// Гость видит их в каталоге кафе на главной сайта.
+  final String address;
+  final String mapUrl;
+  final String hours;
+
   /// Ссылка, из которой рисуется QR-код. У каждого филиала своя,
   /// со своим `?branch=`, иначе оба кода ведут в одно меню.
   final String qrUrl;
@@ -37,6 +43,9 @@ class Branch {
     this.slogan = '',
     this.phone = '',
     this.logoUrl = '',
+    this.address = '',
+    this.mapUrl = '',
+    this.hours = '',
     this.qrUrl = '',
     this.sortOrder = 0,
     this.style = const BranchStyle(),
@@ -55,6 +64,9 @@ class Branch {
       slogan: slogan.isEmpty ? 'Добро пожаловать' : slogan,
       phone: (json['phone'] as String?) ?? '',
       logoUrl: (json['logo_url'] as String?) ?? '',
+      address: (json['address'] as String?) ?? '',
+      mapUrl: (json['map_url'] as String?) ?? '',
+      hours: (json['hours'] as String?) ?? '',
       qrUrl: (json['qr_url'] as String?) ?? '',
       sortOrder: jsonInt(json['sort_order']),
       style: BranchStyle.fromJson(json),

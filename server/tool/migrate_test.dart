@@ -131,6 +131,19 @@ void main() {
       cafe['plan'] == 'trial' && cafe['paid_until'] == month,
       cafe,
     );
+    final catalog = db
+        .select(
+          "select show_in_catalog, description, logo_url, cover_url from cafes where id = 'c'",
+        )
+        .first;
+    expect(
+      'старое кафе не попало в каталог само, поля карточки пустые',
+      catalog['show_in_catalog'] == 0 &&
+          catalog['description'] == '' &&
+          catalog['logo_url'] == '' &&
+          catalog['cover_url'] == '',
+      catalog,
+    );
     expect(
       'таблица истории оплат создана',
       db
@@ -148,6 +161,16 @@ void main() {
                   .select("select theme, accent from branches where id = 'b'")
                   .first['theme'] ==
               '',
+      branchCols,
+    );
+    expect(
+      'у филиалов появились пустые адрес, ссылка на карту и часы',
+      branchCols.containsAll(locationColumns) &&
+          db
+                  .select("select address, map_url, hours from branches where id = 'b'")
+                  .first
+                  .values
+                  .every((v) => v == ''),
       branchCols,
     );
     expect(

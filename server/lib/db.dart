@@ -21,6 +21,12 @@ create table if not exists cafes (
   -- YYYY-MM-DD; пустая — только у тарифа lifetime
   plan         text    not null default 'trial',
   paid_until   text    not null default '',
+  -- Карточка в общем каталоге на главной сайта: показывать ли кафе,
+  -- описание, логотип и обложка. Включает только superadmin.
+  show_in_catalog integer not null default 0,
+  description  text    not null default '',
+  logo_url     text    not null default '',
+  cover_url    text    not null default '',
   created_at   text    not null default (datetime('now'))
 );
 
@@ -66,6 +72,11 @@ create table if not exists branches (
   phone      text    not null default '',
   logo_url   text    not null default '',
   qr_url     text    not null default '',
+  -- Где филиал: адрес, ссылка на 2GIS / Google Maps, часы работы.
+  -- Заполняет кафе, гость видит их в каталоге на главной
+  address    text    not null default '',
+  map_url    text    not null default '',
+  hours      text    not null default '',
   -- Оформление меню филиала; пусто — как по умолчанию
   theme      text    not null default '',
   accent     text    not null default '',
@@ -154,7 +165,7 @@ void _migrate(Database db) {
       .select('pragma table_info(branches)')
       .map((r) => r['name'])
       .toSet();
-  for (final col in styleColumns) {
+  for (final col in [...styleColumns, ...locationColumns]) {
     if (!branchCols.contains(col)) {
       db.execute(
         "alter table branches add column $col text not null default ''",
@@ -178,6 +189,19 @@ void _migrate(Database db) {
         "alter table cafes add column paid_until text not null default ''",
       );
       db.execute('update cafes set paid_until = ?', [until]);
+    });
+  }
+
+  // Каталог кафе на главной. Старые кафе в него не попадают, пока
+  // superadmin сам не включит
+  if (!cafeCols.contains('show_in_catalog')) {
+    inTransaction(db, () {
+      db.execute(
+        'alter table cafes add column show_in_catalog integer not null default 0',
+      );
+      for (final col in ['description', 'logo_url', 'cover_url']) {
+        db.execute("alter table cafes add column $col text not null default ''");
+      }
     });
   }
 
@@ -270,7 +294,7 @@ String newId() {
 }
 
 /// Поля 0/1, которые наружу отдаются как true/false.
-const boolColumns = {'is_active', 'is_visible'};
+const boolColumns = {'is_active', 'is_visible', 'show_in_catalog'};
 
 Map<String, Object?> rowToJson(Row row) {
   final m = <String, Object?>{};
@@ -280,6 +304,9 @@ Map<String, Object?> rowToJson(Row row) {
   }
   return m;
 }
+
+/// Где находится филиал (см. схему branches)
+const locationColumns = ['address', 'map_url', 'hours'];
 
 /// Колонки оформления филиала (см. схему branches)
 const styleColumns = [

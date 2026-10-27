@@ -10,6 +10,7 @@ import 'l10n/languages.dart';
 import 'l10n/translation_service.dart';
 import 'models/branch.dart';
 import 'screens/branch_picker_screen.dart';
+import 'screens/catalog_screen.dart';
 import 'screens/menu_unavailable_screen.dart';
 import 'screens/no_connection_screen.dart';
 import 'screens/welcome_screen.dart';
@@ -55,6 +56,9 @@ void _syncBranch() {
         cur.slogan == b.slogan &&
         cur.phone == b.phone &&
         cur.logoUrl == b.logoUrl &&
+        cur.address == b.address &&
+        cur.mapUrl == b.mapUrl &&
+        cur.hours == b.hours &&
         cur.qrUrl == b.qrUrl &&
         cur.style == b.style &&
         listEquals(cur.languages, b.languages);
@@ -134,9 +138,16 @@ class CafeAndalusRoot extends StatelessWidget {
                       : ValueListenableBuilder<MenuResult?>(
                           valueListenable: menuStore.status,
                           builder: (context, status, child) => switch (status) {
+                            // Меню из каталога не открылось — гость остаётся
+                            // в каталоге, причину покажет сам каталог
+                            _ when openedFromCatalog.value =>
+                              const CatalogScreen(),
                             MenuResult.unpaid => const MenuUnavailableScreen(),
                             MenuResult.offlineNoCache when menuStore.slug != null =>
                               const NoConnectionScreen(),
+                            // В вебе без `?branch=` — главная с каталогом
+                            // кафе, на планшете — выбор филиала сотрудником
+                            _ when kIsWeb => const CatalogScreen(),
                             _ => const BranchPickerScreen(),
                           },
                         ),

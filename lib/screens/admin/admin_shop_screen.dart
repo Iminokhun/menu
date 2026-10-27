@@ -24,6 +24,9 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
   final _nameCtrl = TextEditingController();
   final _sloganCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
+  final _addressCtrl = TextEditingController();
+  final _mapUrlCtrl = TextEditingController();
+  final _hoursCtrl = TextEditingController();
   final _slugCtrl = TextEditingController();
   /// Ссылка QR, которая сейчас записана у филиала
   String _savedQrUrl = '';
@@ -77,6 +80,9 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
     _nameCtrl.dispose();
     _sloganCtrl.dispose();
     _phoneCtrl.dispose();
+    _addressCtrl.dispose();
+    _mapUrlCtrl.dispose();
+    _hoursCtrl.dispose();
     _slugCtrl.dispose();
     super.dispose();
   }
@@ -115,6 +121,9 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
         _nameCtrl.text = (data['name'] as String?) ?? '';
         _sloganCtrl.text = (data['slogan'] as String?) ?? '';
         _phoneCtrl.text = (data['phone'] as String?) ?? '';
+        _addressCtrl.text = (data['address'] as String?) ?? '';
+        _mapUrlCtrl.text = (data['map_url'] as String?) ?? '';
+        _hoursCtrl.text = (data['hours'] as String?) ?? '';
         _slugCtrl.text = (data['slug'] as String?) ?? '';
         _logoUrl = (data['logo_url'] as String?) ?? '';
         _savedQrUrl = (data['qr_url'] as String?) ?? '';
@@ -161,6 +170,9 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
         'name': _nameCtrl.text.trim(),
         'slogan': _sloganCtrl.text.trim(),
         'phone': _phoneCtrl.text.trim(),
+        'address': _addressCtrl.text.trim(),
+        'map_url': _mapUrlCtrl.text.trim(),
+        'hours': _hoursCtrl.text.trim(),
         'logo_url': _logoUrl,
         'qr_url': _qrLink ?? _savedQrUrl,
       });
@@ -701,14 +713,18 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
   }
 
   Widget _field(TextEditingController c, String label,
-      {IconData? icon, ValueChanged<String>? onChanged}) {
+      {IconData? icon, ValueChanged<String>? onChanged, String? hint, TextInputType? keyboard}) {
     return TextField(
       controller: c,
       onChanged: onChanged,
+      keyboardType: keyboard,
       style: const TextStyle(color: Colors.white, fontSize: 16),
       decoration: InputDecoration(
         labelText: label,
         labelStyle: const TextStyle(color: Colors.grey),
+        helperText: hint,
+        helperStyle: const TextStyle(color: Colors.white38, fontSize: 12),
+        helperMaxLines: 2,
         prefixIcon: icon != null ? Icon(icon, color: Colors.white38, size: 20) : null,
         enabledBorder: const OutlineInputBorder(borderSide: BorderSide(color: Colors.white12)),
         focusedBorder: const OutlineInputBorder(borderSide: BorderSide(color: _accent, width: 1.5)),
@@ -1006,6 +1022,23 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
                           style: const TextStyle(color: Colors.orangeAccent, fontSize: 12),
                         ),
                       ],
+                      const SizedBox(height: 30),
+
+                      // Адрес и карта показываются гостю в каталоге кафе
+                      // на главной сайта
+                      _sectionLabel('ГДЕ НАС НАЙТИ'),
+                      const SizedBox(height: 12),
+                      _field(_addressCtrl, 'Адрес филиала',
+                          icon: Icons.place_outlined, hint: 'Например: ул. Киевская 95, 2 этаж'),
+                      const SizedBox(height: 12),
+                      _field(_mapUrlCtrl, 'Ссылка на карту',
+                          icon: Icons.map_outlined,
+                          keyboard: TextInputType.url,
+                          hint: '2GIS или Google Maps → «Поделиться» → «Скопировать ссылку». '
+                              'Гость увидит кнопку «Как добраться»'),
+                      const SizedBox(height: 12),
+                      _field(_hoursCtrl, 'Часы работы',
+                          icon: Icons.schedule_outlined, hint: 'Например: ежедневно 10:00–23:00'),
                       const SizedBox(height: 30),
 
                       _sectionLabel('ЯЗЫКИ МЕНЮ'),
