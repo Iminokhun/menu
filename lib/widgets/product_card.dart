@@ -67,8 +67,9 @@ class LuxuryCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // Фото занимает всё, что осталось от подписи: подпись всегда
+            // одной высоты, и цена с «+» стоят ровно во всех карточках
             Expanded(
-              flex: 4,
               child: Stack(
                 children: [
                   Container(
@@ -168,22 +169,20 @@ class LuxuryCard extends StatelessWidget {
                 ],
               ),
             ),
-            Expanded(
-              flex: 2,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            // Снизу 5 px: кружок «+» внутри поля нажатия 44 px отстоит от
+            // нижнего края на те же 12 px, что и от правого
+            Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 5),
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     ValueListenableBuilder<Locale>(
                       valueListenable: currentLocale,
-                      builder: (_, locale, __) => Text(
-                        product.localizedName(locale.languageCode),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+                      builder: (_, locale, __) {
                         // Контрастная тема — простой рубленый шрифт для
                         // тех, кто плохо видит; иначе — шрифт, выбранный кафе
-                        style: isAcc
+                        final style = isAcc
                             ? GoogleFonts.inter(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
@@ -195,10 +194,24 @@ class LuxuryCard extends StatelessWidget {
                                 fontWeight: FontWeight.bold,
                                 color: config.accent,
                                 height: 1.1,
-                              ),
-                      ),
+                              );
+                        // Место под две строки занято всегда — и у короткого
+                        // названия: иначе цена и «+» прыгали бы от карточки
+                        // к карточке, а у длинного «+» уезжал бы в угол
+                        return Stack(
+                          children: [
+                            Text(' \n ', maxLines: 2, style: style.copyWith(color: Colors.transparent)),
+                            Text(
+                              product.localizedName(locale.languageCode),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: style,
+                            ),
+                          ],
+                        );
+                      },
                     ),
-                    const Spacer(),
+                    const SizedBox(height: 2),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -246,7 +259,6 @@ class LuxuryCard extends StatelessWidget {
                     ),
                   ],
                 ),
-              ),
             ),
           ],
         ),

@@ -12,6 +12,7 @@ import 'db.dart';
 import 'languages.dart';
 import 'media.dart';
 import 'security.dart';
+import 'seo.dart' as seo;
 import 'slug.dart';
 
 /// Ошибка, которую клиент увидит как `{"error": message}` с кодом [status].
@@ -161,6 +162,13 @@ class Api {
     r.get('/api/public/branch/<slug>', _publicBranch);
     r.get('/api/public/menu/<branchId>', _publicMenu);
     r.get('/api/public/cafes', _publicCafes);
+
+    // ---------- Для поисковиков (seo.dart) ----------
+    r.get('/kafe', _seoCatalog);
+    r.get('/kafe/', _seoCatalog);
+    r.get('/kafe/<slug>', _seoBranch);
+    r.get('/sitemap.xml', _sitemap);
+    r.get('/robots.txt', _robots);
 
     // ---------- Вход ----------
     r.post('/api/auth/login', _login);
@@ -594,13 +602,26 @@ class Api {
   /// Каталог на главной сайта: кафе, которые superadmin включил в него,
   /// с их филиалами. Заблокированные и неоплаченные (меню у гостей
   /// выключено) не показываются, как и кафе без единого работающего филиала.
-  Response _publicCafes(Request req) {
+  Response _publicCafes(Request req) => _json([
+    for (final c in _catalogCafes(req))
+      {
+        ...c,
+        'branches': [
+          for (final b in c['branches'] as List<Map<String, Object?>>)
+            Map.of(b)..remove('id'),
+        ],
+      },
+  ]);
+
+  /// Кафе каталога с филиалами — для [_publicCafes] и страниц поисковиков.
+  /// У филиала есть `id`: по нему страница поисковика берёт меню.
+  List<Map<String, Object?>> _catalogCafes(Request req) {
     final cafes = db.select('''
       select id, name, description, logo_url, cover_url, plan, paid_until
         from cafes where is_active = 1 and show_in_catalog = 1
        order by name collate nocase''');
     final branches = db.select('''
-      select b.cafe_id, b.slug, b.name, b.slogan, b.logo_url, b.phone,
+      select b.id, b.cafe_id, b.slug, b.name, b.slogan, b.logo_url, b.phone,
              b.address, b.map_url, b.hours from branches b
         join cafes c on c.id = b.cafe_id
        where b.is_active = 1 and c.is_active = 1 and c.show_in_catalog = 1
@@ -625,8 +646,58 @@ class Api {
           ..['branches'] = own,
       );
     }
-    return _json(out);
+    return out;
   }
+
+  // ======================================================================
+  //  Для поисковиков
+  // ======================================================================
+
+  Response _seoCatalog(Request req) =>
+      _html(seo.catalogPage(base: _menuBase(req), cafes: _catalogCafes(req)));
+
+  Response _seoBranch(Request req, String slug) {
+    final base = _menuBase(req);
+    for (final cafe in _catalogCafes(req)) {
+      for (final b in cafe['branches'] as List<Map<String, Object?>>) {
+        if ((b['slug'] as String).toLowerCase() != slug.toLowerCase()) {
+          continue;
+        }
+        final cats = db.select(
+          'select * from categories where branch_id = ? and is_visible = 1 order by sort_order',
+          [b['id']],
+        );
+        final prods = db.select(
+          'select * from products where branch_id = ? and is_visible = 1 order by sort_order',
+          [b['id']],
+        );
+        return _html(
+          seo.branchPage(
+            base: base,
+            cafe: cafe,
+            branch: b,
+            categories: _outAll(req, cats),
+            products: _outAll(req, prods),
+          ),
+        );
+      }
+    }
+    return _html(seo.notFoundPage(base), status: 404);
+  }
+
+  Response _sitemap(Request req) => Response.ok(
+    seo.sitemap(_menuBase(req), [
+      for (final c in _catalogCafes(req))
+        for (final b in c['branches'] as List<Map<String, Object?>>)
+          b['slug'] as String,
+    ]),
+    headers: {'content-type': 'application/xml; charset=utf-8'},
+  );
+
+  Response _robots(Request req) => Response.ok(
+    seo.robots(_menuBase(req)),
+    headers: {'content-type': 'text/plain; charset=utf-8'},
+  );
 
   Response _publicMenu(Request req, String branchId) {
     final ok = db.select(
@@ -1553,6 +1624,16 @@ class Api {
     return _json({'ok': true});
   }
 }
+
+Response _html(String body, {int status = 200}) => Response(
+  status,
+  body: body,
+  headers: {
+    'content-type': 'text/html; charset=utf-8',
+    // Меню меняется — поисковик и браузер перечитывают через 10 минут
+    'cache-control': 'public, max-age=600',
+  },
+);
 
 Response _json(Object? body, {int status = 200}) => Response(
   status,

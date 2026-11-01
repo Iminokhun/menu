@@ -30,6 +30,16 @@ Future<(int, dynamic)> call(
   return (res.statusCode, text.isEmpty ? null : jsonDecode(text));
 }
 
+/// Страница как текст — для HTML, sitemap.xml и robots.txt
+Future<(int, String, String)> page(String path) async {
+  final res = await http.get(Uri.parse('$base$path'));
+  return (
+    res.statusCode,
+    res.headers['content-type'] ?? '',
+    utf8.decode(res.bodyBytes),
+  );
+}
+
 void expect(String what, bool ok, [Object? info]) {
   stdout.writeln('${ok ? 'OK  ' : 'FAIL'} $what${ok ? '' : '  → $info'}');
   if (!ok) failures++;
@@ -1127,6 +1137,37 @@ Future<void> main(List<String> args) async {
     listedBranch,
   );
 
+  // Страницы для поисковиков
+  var (ps, pt, pb) = await page('/kafe');
+  expect(
+    'поиск: /kafe — HTML со ссылкой на филиал',
+    ps == 200 && pt.startsWith('text/html') && pb.contains('/kafe/$slugA'),
+    '$ps $pt',
+  );
+  (ps, pt, pb) = await page('/kafe/$slugA');
+  expect(
+    'поиск: страница филиала с адресом, кнопкой меню и разметкой schema.org',
+    ps == 200 &&
+        pb.contains('ул. Киевская 95') &&
+        pb.contains('/?branch=$slugA') &&
+        pb.contains('application/ld+json'),
+    '$ps',
+  );
+  (ps, pt, pb) = await page('/kafe/net-takogo-$stamp');
+  expect('поиск: неизвестный филиал → 404', ps == 404, ps);
+  (ps, pt, pb) = await page('/sitemap.xml');
+  expect(
+    'поиск: sitemap.xml со страницей филиала',
+    ps == 200 && pt.contains('xml') && pb.contains('/kafe/$slugA</loc>'),
+    '$ps $pt',
+  );
+  (ps, pt, pb) = await page('/robots.txt');
+  expect(
+    'поиск: robots.txt указывает sitemap и закрывает API',
+    ps == 200 && pb.contains('Sitemap: ') && pb.contains('Disallow: /api/'),
+    pb,
+  );
+
   // Просрочка: 5 дней — льготные, меню работает; 10 дней — выключено
   (s, r) = await call(
     'PATCH',
@@ -1166,6 +1207,8 @@ Future<void> main(List<String> args) async {
     r,
   );
   expect('каталог: неоплаченного кафе нет', await inCatalog() == null);
+  final (unpaidPage, _, _) = await page('/kafe/$slugA');
+  expect('поиск: страницы неоплаченного кафе нет → 404', unpaidPage == 404);
   (s, r) = await call('GET', '/api/admin/branches', token: ta);
   expect('админ кафе может смотреть', s == 200, r);
   (s, r) = await call(

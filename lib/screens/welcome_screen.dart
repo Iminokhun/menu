@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../widgets/auth_image.dart';
+import '../widgets/fit_words_text.dart';
 import '../widgets/motion.dart';
 import '../widgets/theme_background.dart';
 import '../config/current_branch.dart';
@@ -759,12 +760,11 @@ class _CategoryCard extends StatelessWidget {
                         ValueListenableBuilder<Locale>(
                           valueListenable: currentLocale,
                           builder: (_, locale, __) {
-                            return Text(
+                            // Длинное слово уменьшается, а не рвётся по
+                            // буквам («ЗАВТРАК» + «И»); больше двух строк
+                            // название не занимает
+                            return FitWordsText(
                               category.localizedName(locale.languageCode).toUpperCase(),
-                              textAlign: TextAlign.center,
-                              // длинное название не вылезает за карточку
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
                               style: config.titleStyle(
                                 // в мелких карточках и шрифт мельче
                                 fontSize: 22 * config.gridScale.clamp(0.8, 1.15),

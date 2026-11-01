@@ -6,6 +6,7 @@ import 'package:menu_server/backup.dart';
 import 'package:menu_server/db.dart';
 import 'package:menu_server/media.dart';
 import 'package:menu_server/security.dart';
+import 'package:menu_server/seo.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as io;
 import 'package:shelf_static/shelf_static.dart';
@@ -132,7 +133,11 @@ Future<void> main(List<String> args) async {
             return superAdmin(req.change(path: 'menu-kg/'));
           }
         }
-        if (menuWeb != null && !path.startsWith('api/')) return menuWeb(req);
+        // Страницы для поисковиков (каталог, меню филиала, sitemap) отдаёт
+        // сервер: в сайте Flutter их нет
+        if (menuWeb != null && !path.startsWith('api/') && !isSeoPath(path)) {
+          return menuWeb(req);
+        }
         return api.router.call(req);
       });
 
