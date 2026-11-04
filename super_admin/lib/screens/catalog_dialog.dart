@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../api_client.dart';
+import '../photo_shrink.dart';
 
 /// Карточка кафе в каталоге на главной сайта: показывать ли кафе гостям,
 /// описание, логотип и обложка. Возвращает true, если что-то изменилось.
@@ -56,10 +57,11 @@ class _CatalogDialogState extends State<_CatalogDialog> {
       _error = null;
     });
     try {
-      final bytes = await file.readAsBytes();
       final dot = file.name.lastIndexOf('.');
       final ext = dot > 0 ? file.name.substring(dot + 1).toLowerCase() : 'jpg';
-      final r = await api.upload('/api/super/cafes/$_id/upload', bytes, {'kind': kind, 'ext': ext});
+      // Тяжёлый снимок уменьшается здесь: сервер больше 10 МБ не примет
+      final photo = await shrinkPhoto(await file.readAsBytes(), ext);
+      final r = await api.upload('/api/super/cafes/$_id/upload', photo.bytes, {'kind': kind, 'ext': photo.ext});
       _cafe = Map<String, dynamic>.from(r as Map);
       _changed = true;
     } catch (e) {

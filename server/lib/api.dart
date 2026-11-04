@@ -9,6 +9,7 @@ import 'package:sqlite3/sqlite3.dart';
 import 'auth.dart';
 import 'billing.dart';
 import 'db.dart';
+import 'glb.dart';
 import 'languages.dart';
 import 'media.dart';
 import 'security.dart';
@@ -94,6 +95,28 @@ const _maxLocationText = 200;
 /// Сколько символов в описании кафе для каталога
 const _maxCafeDescription = 300;
 const _maxUploadBytes = 10 * 1024 * 1024;
+
+/// Тело JSON-запроса: всё меню филиала — десятки КБ. Без предела любой,
+/// даже не вошедший (вход), мог бы прислать гигабайт и занять память
+const _maxBodyBytes = 1024 * 1024;
+
+/// Длина текстовых полей. Без предела в название можно положить мегабайты —
+/// меню у гостей грузилось бы минутами
+const _maxText = {'name': 200, 'slogan': 200, 'phone': 50, 'description': 2000};
+const _maxTextDefault = 500;
+
+/// Управляющие символы и «невидимые» знаки направления текста: ими можно
+/// спрятать или перевернуть часть названия (подмена текста). Перевод
+/// строки и табуляция остаются
+final _hiddenChars = RegExp(
+  '[${[
+    (0x00, 0x08), (0x0B, 0x0C), (0x0E, 0x1F), (0x7F, 0x7F),
+    (0x202A, 0x202E), (0x2066, 0x2069),
+  ].map((r) => '${String.fromCharCode(r.$1)}-${String.fromCharCode(r.$2)}').join()}]',
+);
+
+/// Путь к файлу кафе: `/uploads/<кафе>/<файл>` — такие имена даёт сервер
+final _uploadPath = RegExp(r'^/uploads/([A-Za-z0-9_-]+)/[A-Za-z0-9._-]+$');
 
 /// 3D-модели блюд (.glb) тяжелее фото — им свой лимит
 const _modelExts = {'glb'};
@@ -293,8 +316,15 @@ class Api {
   }
 
   Future<Map<String, dynamic>> _body(Request req) async {
+    const tooBig = 'Слишком большой запрос';
+    if ((req.contentLength ?? 0) > _maxBodyBytes) throw ApiError(413, tooBig);
+    final buf = BytesBuilder(copy: false);
+    await for (final chunk in req.read()) {
+      buf.add(chunk);
+      if (buf.length > _maxBodyBytes) throw ApiError(413, tooBig);
+    }
     try {
-      final text = await req.readAsString(utf8);
+      final text = utf8.decode(buf.takeBytes());
       if (text.isEmpty) return {};
       final v = jsonDecode(text);
       if (v is Map<String, dynamic>) return v;
@@ -410,10 +440,52 @@ class Api {
     final m = <String, Object?>{};
     for (final e in body.entries) {
       if (allowed.contains(e.key)) {
-        m[e.key] = _in(req, e.key, _valid(e.key, e.value));
+        final v = _in(req, e.key, _valid(e.key, e.value));
+        if (_urlFields.contains(e.key)) _checkOwnFile(req, e.key, v);
+        m[e.key] = e.key == 'qr_url' ? _checkQr(req, v as String) : v;
       }
     }
     return m;
+  }
+
+  /// Картинка или модель — только файл, загруженный этим же кафе. Иначе
+  /// в меню можно вписать любую ссылку: на чужой сайт, который увидит
+  /// адреса гостей, на непроверенный файл или `javascript:`.
+  void _checkOwnFile(Request req, String field, Object? v) {
+    if (v == null || v == '') return;
+    final m = v is String ? _uploadPath.firstMatch(v) : null;
+    if (m == null || m.group(1) != _user(req).cafeId) {
+      throw ApiError(
+        400,
+        'Файл для «$field» нужно загрузить через админку',
+      );
+    }
+  }
+
+  /// Ссылка внутри QR-кода на столе: подмена увела бы гостей на чужой
+  /// сайт — только обычный https-адрес. Ссылка на наше же меню (её
+  /// подставляет [_out]) хранится пустой: соберётся заново из адреса.
+  String _checkQr(Request req, String v) {
+    if (v.isEmpty || v.startsWith('${_menuBase(req)}/')) return '';
+    final uri = Uri.tryParse(v);
+    if (uri != null &&
+        uri.scheme == 'https' &&
+        uri.host.isNotEmpty &&
+        v.length <= 1000) {
+      return v;
+    }
+    throw ApiError(400, 'Ссылка для QR должна начинаться с https://');
+  }
+
+  /// Текст из формы: без невидимых символов, с обрезанными пробелами по
+  /// краям и не длиннее предела поля
+  static String _text(String field, String v) {
+    final t = v.replaceAll(_hiddenChars, '').trim();
+    final max = _maxText[field] ?? _maxTextDefault;
+    if (t.length > max) {
+      throw ApiError(400, 'Поле «$field»: не длиннее $max символов');
+    }
+    return t;
   }
 
   /// Значение поля нужного типа — или 400. SQLite сохранит что угодно
@@ -461,6 +533,12 @@ class Api {
           }
           return t;
         }
+      case 'qr_url':
+        // Адрес проверит _checkQr — ему нужен адрес меню из запроса
+        if (v is String) return v.trim();
+      case 'image_url' || 'logo_url' || 'model_url' || 'bg_url' || 'cover_url':
+        // Чей это файл, проверит _checkOwnFile — здесь только тип
+        if (v is String) return v.trim();
       case 'map_url':
         // Ссылка открывается у гостя — только обычный https-адрес, иначе
         // под видом карты можно было бы подсунуть javascript: или файл
@@ -487,7 +565,7 @@ class Api {
           return [
             for (final p in v)
               {
-                'name': (p as Map)['name'],
+                'name': _text('name', (p as Map)['name'] as String),
                 'price': (p['price'] as num).toDouble(),
               },
           ];
@@ -497,7 +575,7 @@ class Api {
           'Порции: у каждой нужны название и цена не меньше 0',
         );
       default:
-        if (v is String) return v;
+        if (v is String) return _text(field, v);
     }
     throw ApiError(400, 'Неверное значение поля «$field»');
   }
@@ -518,7 +596,8 @@ class Api {
         if (!translatableFields.contains(field) || text is! String) {
           throw ApiError(400, error);
         }
-        if (text.trim().isNotEmpty) texts[field as String] = text.trim();
+        final clean = _text(field as String, text);
+        if (clean.isNotEmpty) texts[field] = clean;
       }
       if (texts.isNotEmpty) out[key as String] = texts;
     }
@@ -1282,17 +1361,20 @@ class Api {
     var storedExt = ext;
     var gzipped = false;
     if (isModel) {
-      // Настоящий .glb начинается с «glTF» — иначе под видом модели можно
-      // выложить на сервер что угодно
-      if (bytes.length < 12 ||
-          ascii.decode(bytes.sublist(0, 4), allowInvalid: true) != 'glTF') {
-        throw ApiError(400, 'Это не 3D-модель .glb');
-      }
+      // Проверяется вся структура — иначе под видом модели можно выложить
+      // на сервер что угодно
+      final problem = glbProblem(bytes);
+      if (problem != null) throw ApiError(400, problem);
       final packed = gzipIfWorthIt(bytes);
       stored = packed ?? bytes;
       gzipped = packed != null;
     } else {
-      final photo = await compressPhoto(bytes, ext);
+      final Photo? photo;
+      try {
+        photo = await compressPhoto(bytes, ext);
+      } on PhotoTooLarge catch (e) {
+        throw ApiError(400, '$e');
+      }
       if (photo == null) throw ApiError(400, 'Это не фото или файл повреждён');
       stored = photo.bytes;
       storedExt = photo.ext;

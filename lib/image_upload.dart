@@ -1,5 +1,6 @@
 import 'package:file_picker/file_picker.dart';
 import 'api/api_client.dart';
+import 'photo_shrink.dart';
 
 /// Просит выбрать изображение и заливает его на сервер.
 /// Возвращает адрес картинки или null, если выбор отменили.
@@ -11,12 +12,12 @@ Future<String?> pickAndUploadImage(String prefix) async {
   final file = await FilePicker.pickFile(type: FileType.image);
   if (file == null) return null;
 
-  final bytes = await file.readAsBytes();
-
   final dot = file.name.lastIndexOf('.');
   final ext = dot > 0 ? file.name.substring(dot + 1).toLowerCase() : 'jpg';
 
-  return api.upload(bytes, ext: ext, prefix: prefix);
+  // Тяжёлый снимок уменьшается здесь: сервер больше 10 МБ не примет
+  final photo = await shrinkPhoto(await file.readAsBytes(), ext);
+  return api.upload(photo.bytes, ext: photo.ext, prefix: prefix);
 }
 
 /// Просит выбрать 3D-модель блюда (.glb) и заливает её на сервер.

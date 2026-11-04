@@ -116,7 +116,13 @@ Future<Import1cReport> import1c(
         report.warnings.add('«${i.name}»: фото повреждено — без фото');
         continue;
       }
-      final photo = await compressPhoto(raw, 'jpg');
+      final Photo? photo;
+      try {
+        photo = await compressPhoto(raw, 'jpg');
+      } on PhotoTooLarge {
+        report.warnings.add('«${i.name}»: фото слишком большое — без фото');
+        continue;
+      }
       if (photo == null) {
         report.warnings.add('«${i.name}»: фото не читается — без фото');
         continue;

@@ -3,6 +3,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
@@ -38,6 +39,38 @@ Future<(int, String, String)> page(String path) async {
     res.headers['content-type'] ?? '',
     utf8.decode(res.bodyBytes),
   );
+}
+
+/// Правильная модель .glb: JSON-описание и [bin] байт геометрии
+List<int> glb({
+  int bin = 0,
+  String json = '{"asset":{"version":"2.0"}}',
+  List<int> tail = const [],
+}) {
+  final j = utf8.encode(json.padRight((json.length + 3) ~/ 4 * 4));
+  final b = bin ~/ 4 * 4;
+  final length = 12 + 8 + j.length + (b > 0 ? 8 + b : 0);
+  List<int> u32(int v) =>
+      (ByteData(4)..setUint32(0, v, Endian.little)).buffer.asUint8List();
+  return [
+    ...ascii.encode('glTF'), ...u32(2), ...u32(length),
+    ...u32(j.length), ...ascii.encode('JSON'), ...j,
+    if (b > 0) ...[...u32(b), ...ascii.encode('BIN'), 0, ...List.filled(b, 7)],
+    ...tail,
+  ];
+}
+
+/// Пересчитывает контрольную сумму заголовка PNG после подмены размеров:
+/// настоящая фото-бомба — правильный файл, просто огромный по размеру
+void pngBombFix(Uint8List png) {
+  var crc = 0xFFFFFFFF;
+  for (final b in png.sublist(12, 29)) {
+    crc ^= b;
+    for (var k = 0; k < 8; k++) {
+      crc = crc & 1 != 0 ? (crc >> 1) ^ 0xEDB88320 : crc >> 1;
+    }
+  }
+  ByteData.sublistView(png).setUint32(29, crc ^ 0xFFFFFFFF);
 }
 
 void expect(String what, bool ok, [Object? info]) {
@@ -220,7 +253,7 @@ Future<void> main(List<String> args) async {
     body: {
       'theme': 'porcelain',
       'accent': '#c0392b',
-      'bg_url': '$base/uploads/x/bg.jpg',
+      'bg_url': '$base/uploads/$cafeA/bg.jpg',
       'card_size': 'large',
       'corners': 'round',
       'title_font': 'playfair',
@@ -231,7 +264,7 @@ Future<void> main(List<String> args) async {
     s == 200 &&
         r['theme'] == 'porcelain' &&
         r['accent'] == '#C0392B' &&
-        r['bg_url'] == '$base/uploads/x/bg.jpg' &&
+        r['bg_url'] == '$base/uploads/$cafeA/bg.jpg' &&
         r['card_size'] == 'large' &&
         r['corners'] == 'round' &&
         r['title_font'] == 'playfair',
@@ -442,14 +475,7 @@ Future<void> main(List<String> args) async {
   );
 
   // Модель с геометрией хранится сжатой и отдаётся с Content-Encoding: gzip
-  final bigModel = [
-    ...ascii.encode('glTF'),
-    2,
-    0,
-    0,
-    0,
-    ...List.filled(200000, 7),
-  ];
+  final bigModel = glb(bin: 200000);
   (s, r) = await call(
     'POST',
     '/api/admin/upload?ext=glb&prefix=model_',
@@ -489,10 +515,45 @@ Future<void> main(List<String> args) async {
     'POST',
     '/api/admin/upload?ext=glb&prefix=model_',
     token: ta,
-    bytes: [...ascii.encode('glTF'), 2, 0, 0, 0, 12, 0, 0, 0],
+    bytes: glb(),
   );
   expect('загрузка 3D-модели', s == 201, r);
   final modelUrl = r['url'];
+  final modelRes = await http.get(Uri.parse(modelUrl as String));
+  expect(
+    'загруженный файл ничего не исполнит, даже открытый по ссылке',
+    (modelRes.headers['content-security-policy'] ?? '').contains('sandbox'),
+    modelRes.headers,
+  );
+  (s, r) = await call(
+    'POST',
+    '/api/admin/upload?ext=glb',
+    token: ta,
+    bytes: glb(tail: utf8.encode('<script>alert(1)</script>')),
+  );
+  expect('модель с приклеенным хвостом → 400', s == 400, r);
+  (s, r) = await call(
+    'POST',
+    '/api/admin/upload?ext=glb',
+    token: ta,
+    bytes: glb(
+      json: '{"asset":{"version":"2.0"},"buffers":[{"uri":"https://x.io/a"}]}',
+    ),
+  );
+  expect('модель со ссылкой на чужой сайт → 400', s == 400, r);
+  // Фото-бомба: заголовок PNG на 60 000×60 000 — разбирать нельзя
+  final bomb = img.encodePng(img.Image(width: 1, height: 1));
+  ByteData.sublistView(bomb)
+    ..setUint32(16, 60000)
+    ..setUint32(20, 60000);
+  pngBombFix(bomb);
+  (s, r) = await call(
+    'POST',
+    '/api/admin/upload?ext=png',
+    token: ta,
+    bytes: bomb,
+  );
+  expect('фото-бомба → 400, сервер жив', s == 400, r);
   (s, r) = await call(
     'POST',
     '/api/admin/upload?ext=glb',
@@ -534,6 +595,67 @@ Future<void> main(List<String> args) async {
     r,
   );
   final prodA = r['id'];
+
+  // ---------- Поля форм: ссылки, длина, невидимые символы ----------
+  for (final (what, field, value) in [
+    ('javascript: вместо фото', 'image_url', 'javascript:alert(1)'),
+    ('фото с чужого сайта', 'image_url', 'https://evil.example/a.jpg'),
+    ('фото другого кафе', 'image_url', '/uploads/other-cafe/a.jpg'),
+    ('3D-модель с чужого сайта', 'model_url', 'https://evil.example/m.glb'),
+    ('выход из папки', 'image_url', '/uploads/../menu.db'),
+    ('название на 10 000 символов', 'name', 'а' * 10000),
+  ]) {
+    (s, r) = await call(
+      'PATCH',
+      '/api/admin/products/$prodA',
+      token: ta,
+      body: {field: value},
+    );
+    expect('форма: $what → 400', s == 400, '$s $r');
+  }
+  (s, r) = await call(
+    'PATCH',
+    '/api/admin/products/$prodA',
+    token: ta,
+    body: {
+      'name': '  Борщ${String.fromCharCodes([0x202E, 0])} ',
+      'description': 'Свёкла\nсметана',
+      'image_url': url,
+    },
+  );
+  expect(
+    'форма: невидимые символы убраны, перевод строки и своё фото остались',
+    s == 200 &&
+        r['name'] == 'Борщ' &&
+        r['description'] == 'Свёкла\nсметана' &&
+        r['image_url'] == url,
+    r,
+  );
+  for (final (what, qr, ok) in [
+    ('QR на чужой http-сайт', 'http://evil.example', false),
+    ('QR с javascript:', 'javascript:alert(1)', false),
+    ('QR на https-адрес', 'https://example.kg/menu', true),
+  ]) {
+    (s, r) = await call(
+      'PATCH',
+      '/api/admin/branches/$branchA',
+      token: ta,
+      body: {'qr_url': qr},
+    );
+    expect('форма: $what → ${ok ? 200 : 400}', s == (ok ? 200 : 400), r);
+  }
+  (s, r) = await call(
+    'PATCH',
+    '/api/admin/branches/$branchA',
+    token: ta,
+    body: {'qr_url': ''},
+  );
+  final huge = await http.post(
+    Uri.parse('$base/api/auth/login'),
+    headers: {'content-type': 'application/json'},
+    body: '{"login":"${'x' * (2 * 1024 * 1024)}","password":"p"}',
+  );
+  expect('запрос на 2 МБ без входа → 413', huge.statusCode == 413, huge.statusCode);
 
   // ---------- Языки меню ----------
   for (final (what, langs) in [
@@ -796,6 +918,10 @@ Future<void> main(List<String> args) async {
     return c['id'] as String;
   }
 
+  // Своё фото кафе B: имя файла — латиницей, как их даёт сервер
+  String dishPhoto(String name) =>
+      '/uploads/$cafeB/dish${name.codeUnits.join('_')}.jpg';
+
   Future<String> newDish(String branch, String cat, String name) async {
     final (_, d) = await call(
       'POST',
@@ -806,7 +932,7 @@ Future<void> main(List<String> args) async {
         'category_id': cat,
         'name': name,
         'price': 150,
-        'image_url': 'https://example.com/$name.jpg',
+        'image_url': dishPhoto(name),
         'i18n': {
           'en': {'name': '$name EN'},
         },
@@ -862,7 +988,7 @@ Future<void> main(List<String> args) async {
   final latteB = (r as List).firstWhere((d) => d['name'] == 'Латте');
   expect(
     'копия: та же картинка, цена и перевод, своя категория',
-    latteB['image_url'] == 'https://example.com/Латте.jpg' &&
+    latteB['image_url'] == '$base${dishPhoto('Латте')}' &&
         latteB['price'] == 150 &&
         latteB['i18n']['en']['name'] == 'Латте EN' &&
         latteB['category_id'] == coffeeB.first['id'] &&

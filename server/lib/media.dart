@@ -38,7 +38,29 @@ File _thumbFile(String dataDir, String relative) =>
 /// Сжатое фото и расширение, под которым его сохранять.
 typedef Photo = ({Uint8List bytes, String ext});
 
-/// Уменьшает и пережимает фото. Null — файл не открылся как изображение.
+/// Больше пикселей фото не разбираем: файл в несколько КБ может заявить
+/// 50 000×50 000 и при разборе занять десятки гигабайт — сервер упал бы
+/// у всех кафе. 50 Мп — около 8000×6000, больше любого обычного снимка
+/// (снимки на 108–200 Мп приложение уменьшает само перед загрузкой).
+const _maxPixels = 50000000;
+
+/// Кадров в анимации — сколько бы ни весил каждый
+const _maxFrames = 300;
+
+/// Фото, которое не уменьшалось, кодируется почти без потерь
+const _keepQuality = 90;
+
+/// Фото больше [_maxPixels] (или анимация длиннее [_maxFrames]).
+class PhotoTooLarge implements Exception {
+  @override
+  String toString() => 'Фото слишком большое по размеру — уменьшите его';
+}
+
+/// Уменьшает и пережимает фото. Null — файл не открылся как изображение;
+/// [PhotoTooLarge] — слишком много пикселей.
+///
+/// Сохраняется всегда заново нарисованная картинка, а не присланный файл:
+/// приклеенный к фото «хвост» (архив, скрипт) на сервер не попадёт.
 ///
 /// Работает в отдельном изоляте: разбор снимка в 12 Мп занимает секунду-две,
 /// и всё это время сервер не отвечал бы остальным кафе.
@@ -50,14 +72,37 @@ Future<Photo?> compressPhoto(
 }) => Isolate.run(() => _compress(input, ext, maxSide, quality));
 
 Photo? _compress(Uint8List input, String ext, int maxSide, int quality) {
-  final decoded = img.decodeImage(input);
+  // Размер — из заголовка, до разбора всего файла
+  final decoder = img.findDecoderForData(input);
+  if (decoder == null) return null;
+  final img.DecodeInfo? info;
+  try {
+    info = decoder.startDecode(input);
+  } on img.ImageException catch (e) {
+    // Совсем огромные размеры пакет image отклоняет сам
+    if (e.message.contains('exceed')) throw PhotoTooLarge();
+    return null;
+  }
+  if (info == null) return null;
+  // У анимации считаются пиксели всех кадров: каждый разбирается целиком
+  final frames = info.numFrames < 1 ? 1 : info.numFrames;
+  if (info.width * info.height * frames > _maxPixels || frames > _maxFrames) {
+    throw PhotoTooLarge();
+  }
+  final decoded = decoder.decode(input);
   if (decoded == null) return null;
 
-  // Анимацию пересжатие превратило бы в один кадр — оставляем как есть
-  if (decoded.numFrames > 1) return (bytes: input, ext: ext);
+  // Анимация остаётся анимацией — GIF из заново нарисованных кадров
+  if (decoded.numFrames > 1) {
+    try {
+      return (bytes: img.encodeGif(decoded), ext: 'gif');
+    } catch (_) {
+      // Не вышло — сохраняем первый кадр обычным фото
+    }
+  }
 
   // Снимок с телефона часто лежит «боком», а поворот записан в EXIF
-  var image = img.bakeOrientation(decoded);
+  var image = img.bakeOrientation(decoded.frames.first);
   final longest = image.width > image.height ? image.width : image.height;
   final resized = longest > maxSide;
   if (resized) {
@@ -77,24 +122,17 @@ Photo? _compress(Uint8List input, String ext, int maxSide, int quality) {
   // Логотипы с прозрачным фоном остаются PNG: в JPEG фон стал бы чёрным.
   // Цвет в JPEG — вполовину чётче яркости (4:2:0), как пишут камеры
   // телефонов: глазу не заметно, а файл легче на треть
-  final keepAlpha = image.numChannels == 4;
-  final out = keepAlpha
-      ? (bytes: img.encodePng(image, level: 6), ext: 'png')
-      : (
-          bytes: img.encodeJpg(
-            image,
-            quality: quality,
-            chroma: img.JpegChroma.yuv420,
-          ),
-          ext: 'jpg',
-        );
-
-  // Уже маленькое фото пересжатие могло только раздуть
-  final sameKind = ext == out.ext || (ext == 'jpeg' && out.ext == 'jpg');
-  if (!resized && sameKind && out.bytes.length >= input.length) {
-    return (bytes: input, ext: ext);
+  if (image.numChannels == 4) {
+    return (bytes: img.encodePng(image, level: 6), ext: 'png');
   }
-  return out;
+  return (
+    bytes: img.encodeJpg(
+      image,
+      quality: resized || quality < _jpegQuality ? quality : _keepQuality,
+      chroma: img.JpegChroma.yuv420,
+    ),
+    ext: 'jpg',
+  );
 }
 
 /// gzip-версия файла, если она заметно меньше; иначе null.
@@ -116,6 +154,18 @@ const _immutable = 'public, max-age=31536000, immutable';
 ///
 /// Остальное отдаёт [fallback].
 Handler uploadsHandler(String dataDir, Handler fallback) {
+  final serve = _uploads(dataDir, fallback);
+  // Файл, открытый по ссылке напрямую, не может ничего исполнить — даже
+  // если когда-нибудь проскочит не картинка. Меню грузит фото и модели как
+  // ресурсы, на них это не влияет
+  return (Request req) async => (await serve(req)).change(
+    headers: {'content-security-policy': _uploadsCsp},
+  );
+}
+
+const _uploadsCsp = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
+
+Handler _uploads(String dataDir, Handler fallback) {
   final thumbs = _Thumbnails(dataDir);
   return (Request req) async {
     final segments = req.url.pathSegments;
@@ -212,12 +262,17 @@ class _Thumbnails {
     await _slot();
     try {
       final ext = original.path.split('.').last.toLowerCase();
-      final photo = await compressPhoto(
-        await original.readAsBytes(),
-        ext,
-        maxSide: thumbWidth,
-        quality: _thumbQuality,
-      );
+      final Photo? photo;
+      try {
+        photo = await compressPhoto(
+          await original.readAsBytes(),
+          ext,
+          maxSide: thumbWidth,
+          quality: _thumbQuality,
+        );
+      } on PhotoTooLarge {
+        return null;
+      }
       if (photo == null) return null;
       // Через временный файл: прерванная запись не оставит битую копию
       await thumb.parent.create(recursive: true);
