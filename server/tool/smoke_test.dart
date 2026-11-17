@@ -568,6 +568,17 @@ Future<void> main(List<String> args) async {
     bytes: utf8.encode('MZ'),
   );
   expect('.exe → 400', s == 400, r);
+  (s, r) = await call(
+    'POST',
+    '/api/admin/upload?ext=heic',
+    token: ta,
+    bytes: utf8.encode('ftypheic'),
+  );
+  expect(
+    '.heic → 400 с подсказкой про айфон',
+    s == 400 && '$r'.contains('HEIC'),
+    r,
+  );
 
   (s, r) = await call(
     'POST',

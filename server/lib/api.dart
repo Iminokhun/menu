@@ -89,6 +89,16 @@ final _hexColor = RegExp(r'^#[0-9a-fA-F]{6}$');
 
 const _imageExts = {'jpg', 'jpeg', 'png', 'webp', 'gif'};
 
+/// Формат снимков айфона. Пакет `image` его не открывает, поэтому админка
+/// переводит такое фото в JPEG ещё до отправки (`lib/photo_shrink.dart`).
+/// Сюда HEIC доходит только со старой, не обновлённой вкладки — ответ
+/// должен подсказать, что делать, а не просто перечислить форматы.
+const _appleExts = {'heic', 'heif'};
+const _heicHint =
+    'Это фото в формате HEIC с айфона. Обновите страницу админки и '
+    'попробуйте снова. Если не поможет — на айфоне: Настройки → Камера → '
+    'Форматы → «Наиболее совместимые»';
+
 /// Сколько символов в адресе и часах работы филиала
 const _maxLocationText = 200;
 
@@ -1294,7 +1304,9 @@ class Api {
     if (!isModel && !_imageExts.contains(ext)) {
       throw ApiError(
         400,
-        'Можно загружать фото (jpg, png, webp, gif) или 3D-модель (glb)',
+        _appleExts.contains(ext)
+            ? _heicHint
+            : 'Можно загружать фото (jpg, png, webp, gif) или 3D-модель (glb)',
       );
     }
     final prefix = (req.url.queryParameters['prefix'] ?? '').replaceAll(
@@ -1318,7 +1330,12 @@ class Api {
     };
     final ext = (req.url.queryParameters['ext'] ?? 'jpg').toLowerCase();
     if (!_imageExts.contains(ext)) {
-      throw ApiError(400, 'Можно загружать фото (jpg, png, webp, gif)');
+      throw ApiError(
+        400,
+        _appleExts.contains(ext)
+            ? _heicHint
+            : 'Можно загружать фото (jpg, png, webp, gif)',
+      );
     }
     final path = await _storeUpload(req, id, ext, 'cafe-$kind-');
     _update('cafes', id, {column: path});

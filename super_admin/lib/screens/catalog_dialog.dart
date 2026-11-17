@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../api_client.dart';
 import '../photo_shrink.dart';
+import '../picker_options.dart';
 
 /// Карточка кафе в каталоге на главной сайта: показывать ли кафе гостям,
 /// описание, логотип и обложка. Возвращает true, если что-то изменилось.
@@ -50,7 +51,10 @@ class _CatalogDialogState extends State<_CatalogDialog> {
   }
 
   Future<void> _pickImage(String kind) async {
-    final file = await FilePicker.pickFile(type: FileType.image);
+    final file = await FilePicker.pickFile(
+      type: FileType.image,
+      webOptions: pickerWebOptions,
+    );
     if (file == null) return;
     setState(() {
       _busy = true;
@@ -59,7 +63,8 @@ class _CatalogDialogState extends State<_CatalogDialog> {
     try {
       final dot = file.name.lastIndexOf('.');
       final ext = dot > 0 ? file.name.substring(dot + 1).toLowerCase() : 'jpg';
-      // Тяжёлый снимок уменьшается здесь: сервер больше 10 МБ не примет
+      // Тяжёлый снимок уменьшается здесь (а HEIC с айфона ещё и переводится
+      // в JPEG): сервер больше 10 МБ не примет и HEIC не откроет
       final photo = await shrinkPhoto(await file.readAsBytes(), ext);
       final r = await api.upload('/api/super/cafes/$_id/upload', photo.bytes, {'kind': kind, 'ext': photo.ext});
       _cafe = Map<String, dynamic>.from(r as Map);
