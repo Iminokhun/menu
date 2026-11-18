@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cached_network_image_platform_interface/cached_network_image_platform_interface.dart';
 
+import '../photo_bitmap.dart';
 import '../photo_url.dart';
 import '../theme/current_theme.dart';
 
@@ -35,6 +36,19 @@ class AuthImage extends StatelessWidget {
     final w = width ?? c.maxWidth, h = height ?? c.maxHeight;
     final side = [w, h].where((v) => v.isFinite).fold<double>(0, (a, b) => a > b ? a : b);
     final decode = side > 0 ? (side * MediaQuery.devicePixelRatioOf(context)).round() : null;
+    // Айфон (там любой браузер — Safari внутри), Safari на маке, Firefox:
+    // движок рисует фото пустым, поэтому разжимаем сами (см.
+    // photo_bitmap.dart). В Chrome и в приложении — как было
+    if (photoBitmapNeeded) {
+      return Image(
+        image: photoBitmapImage(sizedPhotoUrl(url, decode), decode),
+        width: width,
+        height: height,
+        fit: fit,
+        frameBuilder: _fadeIn,
+        errorBuilder: (_, __, ___) => _NoPhoto(width: width, height: height),
+      );
+    }
     return CachedNetworkImage(
       imageUrl: sizedPhotoUrl(url, decode),
       width: width,
@@ -55,6 +69,27 @@ class AuthImage extends StatelessWidget {
         child: const ColoredBox(color: Color(0x14FFFFFF)),
       ),
       errorWidget: (context, url, error) => _NoPhoto(width: width, height: height),
+    );
+  }
+
+  /// Фото проявляется поверх ровного фона — как у [CachedNetworkImage] выше
+  Widget _fadeIn(BuildContext context, Widget child, int? frame, bool wasSync) {
+    if (wasSync) return child;
+    return Stack(
+      fit: StackFit.passthrough,
+      children: [
+        if (frame == null)
+          SizedBox(
+            width: width,
+            height: height,
+            child: const ColoredBox(color: Color(0x14FFFFFF)),
+          ),
+        AnimatedOpacity(
+          opacity: frame == null ? 0 : 1,
+          duration: const Duration(milliseconds: 220),
+          child: child,
+        ),
+      ],
     );
   }
 }

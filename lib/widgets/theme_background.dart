@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cached_network_image_platform_interface/cached_network_image_platform_interface.dart';
 import 'package:flutter/material.dart';
 
+import '../photo_bitmap.dart';
 import '../theme/theme_config.dart';
 
 /// Фон меню с дымкой поверх. Фон темы лежит в приложении (`assets/...`),
@@ -19,6 +20,14 @@ class ThemeBackground extends StatelessWidget {
       children: [
         if (src.startsWith('assets/'))
           Image.asset(src, fit: BoxFit.cover)
+        // Айфон, Safari, Firefox: движок рисует фото пустым — разжимаем сами
+        // (см. photo_bitmap.dart)
+        else if (src.isNotEmpty && photoBitmapNeeded)
+          Image(
+            image: photoBitmapImage(src, null),
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => const SizedBox(),
+          )
         else if (src.isNotEmpty)
           CachedNetworkImage(
             imageUrl: src,
