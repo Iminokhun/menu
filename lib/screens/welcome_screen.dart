@@ -18,6 +18,7 @@ import '../l10n/app_localizations.dart';
 import '../l10n/translation_service.dart';
 import '../widgets/lang_switcher.dart';
 import '../responsive.dart';
+import '../review/review_once.dart';
 import '../review/review_sender.dart';
 import 'catalog_screen.dart';
 import 'menu_screen.dart';
@@ -330,20 +331,32 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     final branch = currentBranch.value;
     final sender = ReviewSender.forBranch(branch);
     if (!sender.canReview || branch == null) return const SizedBox.shrink();
-    return TextButton.icon(
-      onPressed: () {
-        HapticFeedback.selectionClick();
-        showReviewSheet(context, branch: branch, sender: sender);
+    // Отзыв одноразовый: оставил — и кнопки больше нет. Своего отзыва
+    // гость нигде не видит, перечитать и поправить его нельзя
+    return ValueListenableBuilder<int>(
+      valueListenable: reviewsLeft,
+      builder: (context, _, _) {
+        if (reviewLeftFor(branch.id)) return const SizedBox.shrink();
+        return TextButton.icon(
+          onPressed: () {
+            HapticFeedback.selectionClick();
+            showReviewSheet(context, branch: branch, sender: sender);
+          },
+          icon: Icon(
+            Icons.star_outline_rounded,
+            size: 18,
+            color: config.accent,
+          ),
+          label: Text(
+            AppLocalizations.of(context).leaveReview,
+            style: GoogleFonts.manrope(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: config.accent,
+            ),
+          ),
+        );
       },
-      icon: Icon(Icons.star_outline_rounded, size: 18, color: config.accent),
-      label: Text(
-        AppLocalizations.of(context).leaveReview,
-        style: GoogleFonts.manrope(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-          color: config.accent,
-        ),
-      ),
     );
   }
 

@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 const _branch = Branch(
   id: 'b1',
@@ -74,6 +75,8 @@ ElevatedButton _sendButton(WidgetTester tester) =>
 
 void main() {
   setUpAll(() => GoogleFonts.config.allowRuntimeFetching = false);
+  // Отправка запоминает отзыв на устройстве — хранилище нужно подставное
+  setUp(() => SharedPreferences.setMockInitialValues({}));
 
   testWidgets('без оценки кнопка не нажимается и отзыв не уходит', (
     tester,

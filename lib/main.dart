@@ -9,6 +9,7 @@ import 'l10n/app_localizations.dart';
 import 'l10n/languages.dart';
 import 'l10n/translation_service.dart';
 import 'models/branch.dart';
+import 'review/review_once.dart';
 import 'screens/branch_picker_screen.dart';
 import 'screens/catalog_screen.dart';
 import 'screens/menu_unavailable_screen.dart';
@@ -30,6 +31,9 @@ void main() async {
   menuStore.status.addListener(_syncBranch);
   currentBranch.addListener(_syncTheme);
   currentBranch.addListener(_syncLanguage);
+  // Отзыв одноразовый: с каких филиалов его уже оставляли с этого
+  // устройства, надо знать до того, как нарисуется кнопка
+  await loadLeftReviews();
   final slug = await resolveBranchSlug();
   if (slug != null) await menuStore.open(slug);
 

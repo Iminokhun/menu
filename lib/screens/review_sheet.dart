@@ -8,6 +8,7 @@ import '../l10n/translation_service.dart';
 import '../models/branch.dart';
 import '../open_link.dart';
 import '../review/review_message.dart';
+import '../review/review_once.dart';
 import '../review/review_sender.dart';
 import '../theme/current_theme.dart';
 import '../theme/theme_config.dart';
@@ -89,6 +90,9 @@ class _ReviewSheetState extends State<ReviewSheet> {
       lang: currentLocale.value.languageCode,
     );
     setState(() => _sent = true);
+    // Отзыв одноразовый — помним это сразу, не дожидаясь ответа сервера:
+    // ссылка в WhatsApp уже открыта, и второй отзыв был бы дублем
+    unawaited(rememberReview(widget.branch.id));
     unawaited(saving.then(_onSaved, onError: (_) => _onSaved(false)));
   }
 
