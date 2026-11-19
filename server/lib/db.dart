@@ -24,6 +24,11 @@ create table if not exists cafes (
   -- Карточка в общем каталоге на главной сайта: показывать ли кафе,
   -- описание, логотип и обложка. Включает только superadmin.
   show_in_catalog integer not null default 0,
+  -- Право принимать заказы с сайта. Выдаёт только superadmin: это
+  -- отдельная услуга, а не настройка кафе. Пока право не выдано, номер
+  -- WhatsApp филиала гостю не показывается и заказы не принимаются,
+  -- даже если номер в филиале заполнен.
+  orders_enabled integer not null default 0,
   description  text    not null default '',
   logo_url     text    not null default '',
   cover_url    text    not null default '',
@@ -260,6 +265,17 @@ void _migrate(Database db) {
     });
   }
 
+  // Право принимать заказы с сайта. Ноль всем, включая уже заведённые
+  // кафе: это услуга, которую владелец платформы выдаёт сам. Включать
+  // задним числом нельзя — кафе, не знающее про заказы, их и не увидит
+  if (!cafeCols.contains('orders_enabled')) {
+    inTransaction(db, () {
+      db.execute(
+        'alter table cafes add column orders_enabled integer not null default 0',
+      );
+    });
+  }
+
   // Языки меню. Раньше их было три постоянных — филиалы, заведённые тогда,
   // их и сохраняют
   if (!branchCols.contains('languages')) {
@@ -349,7 +365,12 @@ String newId() {
 }
 
 /// Поля 0/1, которые наружу отдаются как true/false.
-const boolColumns = {'is_active', 'is_visible', 'show_in_catalog'};
+const boolColumns = {
+  'is_active',
+  'is_visible',
+  'show_in_catalog',
+  'orders_enabled',
+};
 
 Map<String, Object?> rowToJson(Row row) {
   final m = <String, Object?>{};

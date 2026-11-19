@@ -229,6 +229,24 @@ void main() {
       branchRow['order_whatsapp'] == '' && branchRow['delivery_price'] == 0,
       branchRow,
     );
+    // Право на заказы — услуга от владельца платформы, а не настройка
+    // кафе: задним числом оно не включается никому
+    final cafeCols = db
+        .select('pragma table_info(cafes)')
+        .map((r) => r['name'])
+        .toSet();
+    expect(
+      'у кафе появилось право orders_enabled',
+      cafeCols.contains('orders_enabled'),
+      cafeCols,
+    );
+    expect(
+      'и у старых кафе оно выключено',
+      db.select('select count(*) n from cafes where orders_enabled = 0')
+              .first['n'] ==
+          db.select('select count(*) n from cafes').first['n'],
+      db.select('select id, orders_enabled from cafes').map((r) => r).toList(),
+    );
     db.close();
 
     // Повторный запуск ничего не ломает

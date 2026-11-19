@@ -792,7 +792,7 @@ class Api {
   Response _publicBranch(Request req, String slug) {
     final rows = db.select(
       '''
-      select b.* from branches b join cafes c on c.id = b.cafe_id
+      select b.*, c.orders_enabled from branches b join cafes c on c.id = b.cafe_id
        where b.slug = ? and b.is_active = 1 and c.is_active = 1''',
       [slug],
     );
@@ -800,7 +800,12 @@ class Api {
     if (_access(rows.first['cafe_id'] as String).access == Access.expired) {
       throw ApiError(403, _unpaidGuest, code: 'unpaid');
     }
-    return _json(_out(req, rows.first));
+    final m = _out(req, rows.first);
+    // Право на заказы выдаёт владелец платформы. Нет права — для гостя это
+    // просто незаполненный номер: кнопки заказа нет, и объяснять ему
+    // нечего. Сам номер при этом остаётся в базе
+    if (m['orders_enabled'] != true) m['order_whatsapp'] = '';
+    return _json(m);
   }
 
   /// Каталог на главной сайта: кафе, которые superadmin включил в него,
@@ -952,7 +957,7 @@ class Api {
 
     final rows = db.select(
       '''
-      select b.* from branches b join cafes c on c.id = b.cafe_id
+      select b.*, c.orders_enabled from branches b join cafes c on c.id = b.cafe_id
        where b.id = ? and b.is_active = 1 and c.is_active = 1''',
       [branchId],
     );
@@ -969,10 +974,13 @@ class Api {
     if (_access(branch['cafe_id'] as String).access == Access.expired) {
       throw ApiError(403, _unpaidGuest, code: 'unpaid');
     }
-    // Заказы включает само кафе, вписав номер WhatsApp. Без этой проверки
-    // список заказов можно было бы засыпать тому, кто их не принимает и на
-    // этот экран не заходит
-    if (_str(branch['order_whatsapp']).isEmpty) {
+    // Два условия, и оба обязательны: право на заказы выдал владелец
+    // платформы, а кафе вписало номер WhatsApp. Гостю разница не видна —
+    // кнопки у него в обоих случаях нет, и ответ одинаковый. Без этой
+    // проверки список заказов можно было бы засыпать тому, кто их не
+    // принимает и на этот экран не заходит
+    if ((branch['orders_enabled'] as int? ?? 0) == 0 ||
+        _str(branch['order_whatsapp']).isEmpty) {
       throw ApiError(
         403,
         'Заказы в этом кафе пока не принимаются',
@@ -1241,7 +1249,19 @@ class Api {
       'select * from branches where cafe_id = ? order by sort_order, name',
       [u.cafeId],
     );
-    return _json(_outAll(req, rows));
+    // Право на заказы у кафе одно на все филиалы. Своей админке его
+    // показываем честно: иначе кафе вписало бы номер и не понимало,
+    // почему кнопка у гостей так и не появилась
+    final allowed =
+        db
+            .select('select orders_enabled from cafes where id = ?', [u.cafeId])
+            .first['orders_enabled'] ==
+        1;
+    final out = _outAll(req, rows);
+    for (final m in out) {
+      m['orders_enabled'] = allowed;
+    }
+    return _json(out);
   }
 
   Future<Response> _createBranch(Request req) async {
@@ -1926,6 +1946,12 @@ class Api {
     }
     if (body.containsKey('show_in_catalog')) {
       data['show_in_catalog'] = toSql(body['show_in_catalog'] == true);
+    }
+    // Право на заказы с сайта. Выключение мгновенно убирает кнопку у
+    // гостей и закрывает приём: номер в филиале при этом сохраняется,
+    // чтобы при возврате права ничего не пришлось набирать заново
+    if (body.containsKey('orders_enabled')) {
+      data['orders_enabled'] = toSql(body['orders_enabled'] == true);
     }
     if (body.containsKey('description')) {
       final text = body['description'];

@@ -26,7 +26,8 @@ void main(List<String> args) {
   db.execute('delete from cafes');
   db.execute(
     "insert into cafes (id, name, is_active, max_branches, plan, paid_until, "
-    "show_in_catalog) values ('c1', 'Демо', 1, 5, 'lifetime', '', 1)",
+    "show_in_catalog, orders_enabled) values "
+    "('c1', 'Демо', 1, 5, 'lifetime', '', 1, 1)",
   );
   db.execute(
     "insert into branches (id, cafe_id, slug, name, slogan, address, "

@@ -24,8 +24,8 @@ const _otherBranchId = 'branch-2';
 
 void _seed(Database db) {
   db.execute(
-    "insert into cafes (id, name, is_active, max_branches, plan, paid_until) "
-    "values ('cafe-1', 'Тест', 1, 5, 'lifetime', '')",
+    "insert into cafes (id, name, is_active, max_branches, plan, paid_until, "
+    "orders_enabled) values ('cafe-1', 'Тест', 1, 5, 'lifetime', '', 1)",
   );
   db.execute(
     "insert into cafes (id, name, is_active, max_branches, plan, paid_until) "
@@ -182,6 +182,12 @@ Future<void> main() async {
         res.statusCode,
         decoded is Map ? Map<String, Object?>.from(decoded) : <String, Object?>{},
       );
+    }
+
+    Future<(int, Object?)> get(String path) async {
+      final res = await app(Request('GET', Uri.parse('http://localhost$path')));
+      final text = await res.readAsString();
+      return (res.statusCode, text.isEmpty ? null : jsonDecode(text));
     }
 
     // --- Доставка: суммы считает сервер ---
@@ -404,6 +410,43 @@ Future<void> main() async {
       untouched['total'] != 1 && untouched['guest_phone'] != '000',
       untouched,
     );
+
+    // --- Право на заказы: выдаёт владелец платформы, не кафе ---
+    // Номер у филиала заполнен и остаётся на месте — важно, что при
+    // возврате права его не придётся набирать заново
+    db.execute("update cafes set orders_enabled = 0 where id = 'cafe-1'");
+    (status, body) = await post(_order(code: 'NORIGHT'));
+    expect(
+      'без права заказы не принимаются, хотя номер вписан',
+      status == 403 && body['code'] == 'orders_off',
+      '$status $body',
+    );
+
+    var (pubStatus, pubBody) = await get('/api/public/branch/center');
+    expect(
+      'и гостю номер не показывается — кнопки у него просто нет',
+      pubStatus == 200 && (pubBody as Map)['order_whatsapp'] == '',
+      '$pubStatus $pubBody',
+    );
+    expect(
+      'но в базе номер цел',
+      db
+              .select("select order_whatsapp from branches where id = ?", [
+                _branchId,
+              ])
+              .first['order_whatsapp'] ==
+          '996555112233',
+    );
+
+    db.execute("update cafes set orders_enabled = 1 where id = 'cafe-1'");
+    (pubStatus, pubBody) = await get('/api/public/branch/center');
+    expect(
+      'право вернули — номер снова виден',
+      (pubBody as Map)['order_whatsapp'] == '996555112233',
+      pubBody,
+    );
+    (status, _) = await post(_order(code: 'RIGHTOK'));
+    expect('и заказ снова принимается', status == 201, status);
 
     // --- Длинные строки: и в память, и в базу ---
     // Ключом ограничителя служил присланный branch_id, и он жил в памяти

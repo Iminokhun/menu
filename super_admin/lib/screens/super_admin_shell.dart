@@ -604,6 +604,38 @@ class _SuperAdminShellState extends State<SuperAdminShell> {
               ],
             );
           }),
+
+          // Заказы с сайта: отдельная услуга, которую выдаём мы, а не
+          // настройка кафе. Выключение убирает кнопку у гостей сразу,
+          // номер WhatsApp в филиале при этом сохраняется
+          Builder(builder: (_) {
+            final orders = cafe['orders_enabled'] == true;
+            final color = orders ? Colors.green : Colors.white38;
+            return Row(
+              children: [
+                Icon(orders ? Icons.shopping_bag : Icons.shopping_bag_outlined,
+                    color: color, size: 18),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                      orders ? 'Заказы с сайта включены' : 'Заказы с сайта выключены',
+                      style: TextStyle(
+                          color: color, fontSize: 14, fontWeight: FontWeight.w600)),
+                ),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: () => _run(
+                      () => api.patch('/api/super/cafes/${cafe['id']}',
+                          {'orders_enabled': !orders}),
+                      orders
+                          ? 'Заказы с сайта выключены'
+                          : 'Заказы с сайта включены. Кафе осталось вписать номер WhatsApp'),
+                  child: Text(orders ? 'Выключить' : 'Включить',
+                      style: const TextStyle(color: _accent)),
+                ),
+              ],
+            );
+          }),
           const SizedBox(height: 4),
 
           // Лимит — главное, ради чего этот экран: видно сразу и меняется в один клик

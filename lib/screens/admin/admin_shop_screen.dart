@@ -54,6 +54,10 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
   /// принимаются вовсе: угадывать страну здесь нельзя, неверный код увёл бы
   /// все заказы кафе на чужой телефон
   String _countryCode = '';
+
+  /// Выдано ли кафе право принимать заказы с сайта. Решает владелец
+  /// платформы, само кафе этого поменять не может
+  bool _ordersAllowed = false;
   bool _loading = true;
   bool _saving = false;
 
@@ -141,6 +145,7 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
         _slugCtrl.text = (data['slug'] as String?) ?? '';
         _orderWaCtrl.text = (data['order_whatsapp'] as String?) ?? '';
         _countryCode = (data['default_country_code'] as String?) ?? '';
+        _ordersAllowed = data['orders_enabled'] == true;
         _deliveryPriceCtrl.text = _money(jsonDouble(data['delivery_price']));
         _logoUrl = (data['logo_url'] as String?) ?? '';
         _savedQrUrl = (data['qr_url'] as String?) ?? '';
@@ -775,6 +780,40 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Пока право не выдано, номер можно вписать, но кнопки у гостей не
+        // будет. Молчать об этом нельзя: кафе решило бы, что сломалось
+        if (!_ordersAllowed) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.orangeAccent.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: Colors.orangeAccent.withValues(alpha: 0.4),
+              ),
+            ),
+            child: const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.lock_outline,
+                  color: Colors.orangeAccent,
+                  size: 18,
+                ),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Заказы с сайта пока не подключены. Настройки ниже '
+                    'сохранятся, но кнопка заказа у гостей не появится — '
+                    'подключение включают там же, где заводили кафе.',
+                    style: TextStyle(color: Colors.orangeAccent, fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+        ],
         _field(
           _orderWaCtrl,
           'WhatsApp для заказов',
