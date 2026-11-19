@@ -29,6 +29,9 @@ class ApiError implements Exception {
 /// Поля, которые клиенту разрешено писать. Всё остальное (id, cafe_id,
 /// branch_id у существующих строк) из запроса молча отбрасывается —
 /// так кафе не переложит свой товар в чужой филиал подменой поля.
+/// `orders_enabled` здесь намеренно нет: право принимать заказы выдаёт
+/// владелец платформы (`PATCH /api/super/branches/<id>`), и кафе не может
+/// включить его себе само.
 const _branchFields = {
   'slug',
   'name',
@@ -303,6 +306,7 @@ class Api {
     r.get('/api/super/cafes/<id>/payments', _listPayments);
     r.post('/api/super/cafes/<id>/payments', _addPayment);
     r.post('/api/super/cafes/<id>/upload', _uploadCafeImage);
+    r.patch('/api/super/branches/<id>', _updateBranchOrders);
     r.patch('/api/super/users/<id>', _updateUser);
     r.delete('/api/super/users/<id>', _deleteUser);
 
@@ -792,7 +796,7 @@ class Api {
   Response _publicBranch(Request req, String slug) {
     final rows = db.select(
       '''
-      select b.*, c.orders_enabled from branches b join cafes c on c.id = b.cafe_id
+      select b.* from branches b join cafes c on c.id = b.cafe_id
        where b.slug = ? and b.is_active = 1 and c.is_active = 1''',
       [slug],
     );
@@ -801,9 +805,9 @@ class Api {
       throw ApiError(403, _unpaidGuest, code: 'unpaid');
     }
     final m = _out(req, rows.first);
-    // Право на заказы выдаёт владелец платформы. Нет права — для гостя это
-    // просто незаполненный номер: кнопки заказа нет, и объяснять ему
-    // нечего. Сам номер при этом остаётся в базе
+    // Право на заказы выдаёт владелец платформы, и каждому филиалу своё.
+    // Нет права — для гостя это просто незаполненный номер: кнопки заказа
+    // нет, и объяснять ему нечего. Сам номер при этом остаётся в базе
     if (m['orders_enabled'] != true) m['order_whatsapp'] = '';
     return _json(m);
   }
@@ -957,7 +961,7 @@ class Api {
 
     final rows = db.select(
       '''
-      select b.*, c.orders_enabled from branches b join cafes c on c.id = b.cafe_id
+      select b.* from branches b join cafes c on c.id = b.cafe_id
        where b.id = ? and b.is_active = 1 and c.is_active = 1''',
       [branchId],
     );
@@ -974,9 +978,9 @@ class Api {
     if (_access(branch['cafe_id'] as String).access == Access.expired) {
       throw ApiError(403, _unpaidGuest, code: 'unpaid');
     }
-    // Два условия, и оба обязательны: право на заказы выдал владелец
-    // платформы, а кафе вписало номер WhatsApp. Гостю разница не видна —
-    // кнопки у него в обоих случаях нет, и ответ одинаковый. Без этой
+    // Два условия, и оба обязательны: право на заказы этому филиалу выдал
+    // владелец платформы, а кафе вписало номер WhatsApp. Гостю разница не
+    // видна — кнопки у него в обоих случаях нет, и ответ одинаковый. Без этой
     // проверки список заказов можно было бы засыпать тому, кто их не
     // принимает и на этот экран не заходит
     if ((branch['orders_enabled'] as int? ?? 0) == 0 ||
@@ -1249,19 +1253,11 @@ class Api {
       'select * from branches where cafe_id = ? order by sort_order, name',
       [u.cafeId],
     );
-    // Право на заказы у кафе одно на все филиалы. Своей админке его
-    // показываем честно: иначе кафе вписало бы номер и не понимало,
-    // почему кнопка у гостей так и не появилась
-    final allowed =
-        db
-            .select('select orders_enabled from cafes where id = ?', [u.cafeId])
-            .first['orders_enabled'] ==
-        1;
-    final out = _outAll(req, rows);
-    for (final m in out) {
-      m['orders_enabled'] = allowed;
-    }
-    return _json(out);
+    // `orders_enabled` в строке филиала — право на заказы, выданное
+    // владельцем платформы. Своей админке показываем его честно: иначе
+    // кафе вписало бы номер и не понимало, почему кнопка у гостей так и не
+    // появилась. Поменять это поле кафе не может — его нет в `_branchFields`
+    return _json(_outAll(req, rows));
   }
 
   Future<Response> _createBranch(Request req) async {
@@ -1837,8 +1833,12 @@ class Api {
     final users = db.select('''
       select id, cafe_id, login, is_active, created_at from users
        where role = 'cafe_admin' order by created_at''');
+    // order_whatsapp — чтобы на экране было видно не только выданное
+    // право, но и вписало ли кафе номер: без номера заказы всё равно не
+    // идут, а выглядит это как поломка
     final branches = db.select(
-      'select id, cafe_id, slug, name, is_active from branches order by sort_order, name',
+      'select id, cafe_id, slug, name, is_active, orders_enabled, '
+      'order_whatsapp from branches order by sort_order, name',
     );
     return _json(
       cafes.map((c) {
@@ -1947,12 +1947,6 @@ class Api {
     if (body.containsKey('show_in_catalog')) {
       data['show_in_catalog'] = toSql(body['show_in_catalog'] == true);
     }
-    // Право на заказы с сайта. Выключение мгновенно убирает кнопку у
-    // гостей и закрывает приём: номер в филиале при этом сохраняется,
-    // чтобы при возврате права ничего не пришлось набирать заново
-    if (body.containsKey('orders_enabled')) {
-      data['orders_enabled'] = toSql(body['orders_enabled'] == true);
-    }
     if (body.containsKey('description')) {
       final text = body['description'];
       if (text is! String) throw ApiError(400, 'Описание — текстом');
@@ -1996,6 +1990,28 @@ class Api {
       );
     }
     return _json(_cafeById(id));
+  }
+
+  /// Право принимать заказы с сайта: включает и выключает только владелец
+  /// платформы, и каждому филиалу отдельно. Больше этим запросом в филиале
+  /// ничего не меняется — остальные поля кафе правит у себя само.
+  /// Выключение мгновенно убирает кнопку у гостей и закрывает приём, а
+  /// номер WhatsApp остаётся: вернём право — набирать заново не придётся
+  Future<Response> _updateBranchOrders(Request req, String id) async {
+    _superadmin(req);
+    final rows = db.select('select id from branches where id = ?', [id]);
+    if (rows.isEmpty) throw ApiError(404, 'Филиал не найден');
+    final body = await _body(req);
+    if (!body.containsKey('orders_enabled')) {
+      throw ApiError(400, 'Нечего менять');
+    }
+    db.execute('update branches set orders_enabled = ? where id = ?', [
+      toSql(body['orders_enabled'] == true),
+      id,
+    ]);
+    return _json(
+      _out(req, db.select('select * from branches where id = ?', [id]).first),
+    );
   }
 
   Response _deleteCafe(Request req, String id) {

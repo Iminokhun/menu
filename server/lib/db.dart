@@ -24,11 +24,6 @@ create table if not exists cafes (
   -- Карточка в общем каталоге на главной сайта: показывать ли кафе,
   -- описание, логотип и обложка. Включает только superadmin.
   show_in_catalog integer not null default 0,
-  -- Право принимать заказы с сайта. Выдаёт только superadmin: это
-  -- отдельная услуга, а не настройка кафе. Пока право не выдано, номер
-  -- WhatsApp филиала гостю не показывается и заказы не принимаются,
-  -- даже если номер в филиале заполнен.
-  orders_enabled integer not null default 0,
   description  text    not null default '',
   logo_url     text    not null default '',
   cover_url    text    not null default '',
@@ -99,6 +94,11 @@ create table if not exists branches (
   order_whatsapp text not null default '',
   -- Стоимость доставки, в тех же единицах, что цены блюд. 0 — бесплатно
   delivery_price real not null default 0,
+  -- Право принимать заказы с сайта. Выдаёт только superadmin, и каждому
+  -- филиалу отдельно: у кафе бывает точка с доставкой и точка, где заказы
+  -- принимать некому. Пока право не выдано, номер WhatsApp гостю не
+  -- показывается и заказы не принимаются, даже если номер заполнен.
+  orders_enabled integer not null default 0,
   is_active  integer not null default 1,
   sort_order integer not null default 0
 );
@@ -266,14 +266,26 @@ void _migrate(Database db) {
   }
 
   // Право принимать заказы с сайта. Ноль всем, включая уже заведённые
-  // кафе: это услуга, которую владелец платформы выдаёт сам. Включать
-  // задним числом нельзя — кафе, не знающее про заказы, их и не увидит
-  if (!cafeCols.contains('orders_enabled')) {
+  // филиалы: это услуга, которую владелец платформы выдаёт сам. Включать
+  // задним числом нельзя — кафе, не знающее про заказы, их и не увидит.
+  // Сначала право было одно на всё кафе; если такая колонка ещё есть, её
+  // значение достаётся всем филиалам этого кафе, а сама она уходит: два
+  // места для одного права — это вопрос «какое из них главнее»
+  if (!branchCols.contains('orders_enabled')) {
     inTransaction(db, () {
       db.execute(
-        'alter table cafes add column orders_enabled integer not null default 0',
+        'alter table branches add column orders_enabled integer not null '
+        'default 0',
       );
+      if (cafeCols.contains('orders_enabled')) {
+        db.execute('''
+          update branches set orders_enabled = 1 where cafe_id in
+            (select id from cafes where orders_enabled = 1)''');
+      }
     });
+  }
+  if (cafeCols.contains('orders_enabled')) {
+    db.execute('alter table cafes drop column orders_enabled');
   }
 
   // Языки меню. Раньше их было три постоянных — филиалы, заведённые тогда,

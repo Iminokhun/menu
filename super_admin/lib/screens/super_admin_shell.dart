@@ -605,37 +605,6 @@ class _SuperAdminShellState extends State<SuperAdminShell> {
             );
           }),
 
-          // Заказы с сайта: отдельная услуга, которую выдаём мы, а не
-          // настройка кафе. Выключение убирает кнопку у гостей сразу,
-          // номер WhatsApp в филиале при этом сохраняется
-          Builder(builder: (_) {
-            final orders = cafe['orders_enabled'] == true;
-            final color = orders ? Colors.green : Colors.white38;
-            return Row(
-              children: [
-                Icon(orders ? Icons.shopping_bag : Icons.shopping_bag_outlined,
-                    color: color, size: 18),
-                const SizedBox(width: 6),
-                Flexible(
-                  child: Text(
-                      orders ? 'Заказы с сайта включены' : 'Заказы с сайта выключены',
-                      style: TextStyle(
-                          color: color, fontSize: 14, fontWeight: FontWeight.w600)),
-                ),
-                const SizedBox(width: 8),
-                TextButton(
-                  onPressed: () => _run(
-                      () => api.patch('/api/super/cafes/${cafe['id']}',
-                          {'orders_enabled': !orders}),
-                      orders
-                          ? 'Заказы с сайта выключены'
-                          : 'Заказы с сайта включены. Кафе осталось вписать номер WhatsApp'),
-                  child: Text(orders ? 'Выключить' : 'Включить',
-                      style: const TextStyle(color: _accent)),
-                ),
-              ],
-            );
-          }),
           const SizedBox(height: 4),
 
           // Лимит — главное, ради чего этот экран: видно сразу и меняется в один клик
@@ -663,13 +632,7 @@ class _SuperAdminShellState extends State<SuperAdminShell> {
           ),
           if (branches.isNotEmpty) ...[
             const SizedBox(height: 6),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: branches
-                  .map((b) => _chip('${b['name']} · ${b['slug']}', Colors.white38))
-                  .toList(),
-            ),
+            for (final b in branches) _branchRow(b),
           ],
           const SizedBox(height: 14),
           const Text('ЛОГИНЫ',
@@ -684,6 +647,66 @@ class _SuperAdminShellState extends State<SuperAdminShell> {
                   style: TextStyle(color: Colors.orangeAccent, fontSize: 13)),
             ),
           for (final u in users) _userRow(u),
+        ],
+      ),
+    );
+  }
+
+  /// Филиал и его право принимать заказы с сайта. Право — отдельная
+  /// услуга, которую выдаём мы, и каждому филиалу своё: у кафе бывает
+  /// точка с доставкой и точка, где заказы принимать некому.
+  ///
+  /// Номер WhatsApp вписывает само кафе у себя, поэтому «право выдано, а
+  /// номера нет» — обычное состояние, а не поломка. Говорим об этом прямо:
+  /// иначе кафе скажет «не работает», а искать будет нечего
+  Widget _branchRow(Map<String, dynamic> b) {
+    final orders = b['orders_enabled'] == true;
+    final hasPhone = ((b['order_whatsapp'] as String?) ?? '').isNotEmpty;
+    final color = !orders
+        ? Colors.white38
+        : hasPhone
+            ? Colors.green
+            : Colors.orangeAccent;
+    final state = !orders
+        ? 'заказы с сайта не подключены'
+        : hasPhone
+            ? 'принимает заказы с сайта'
+            : 'подключено, но кафе не вписало номер WhatsApp';
+    final off = b['is_active'] == true ? '' : 'филиал выключен · ';
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Icon(orders ? Icons.shopping_bag : Icons.shopping_bag_outlined,
+              color: color, size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('${b['name']} · ${b['slug']}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600)),
+                Text('$off$state',
+                    maxLines: 2,
+                    style: TextStyle(color: color, fontSize: 11)),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: () => _run(
+                () => api.patch('/api/super/branches/${b['id']}',
+                    {'orders_enabled': !orders}),
+                orders
+                    ? 'Заказы с сайта выключены: ${b['name']}'
+                    : 'Заказы с сайта включены: ${b['name']}'),
+            child: Text(orders ? 'Выключить' : 'Включить',
+                style: const TextStyle(color: _accent, fontSize: 13)),
+          ),
         ],
       ),
     );

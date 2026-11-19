@@ -22,10 +22,15 @@ void expect(String what, bool ok, [Object? info]) {
 const _branchId = 'branch-1';
 const _otherBranchId = 'branch-2';
 
+/// Второй филиал того же кафе: номер WhatsApp вписан, а права на заказы
+/// нет. Главное, что проверяется этой строкой: право у каждого филиала
+/// своё, и соседу по кафе оно не достаётся
+const _siblingId = 'branch-3';
+
 void _seed(Database db) {
   db.execute(
-    "insert into cafes (id, name, is_active, max_branches, plan, paid_until, "
-    "orders_enabled) values ('cafe-1', 'Тест', 1, 5, 'lifetime', '', 1)",
+    "insert into cafes (id, name, is_active, max_branches, plan, paid_until) "
+    "values ('cafe-1', 'Тест', 1, 5, 'lifetime', '')",
   );
   db.execute(
     "insert into cafes (id, name, is_active, max_branches, plan, paid_until) "
@@ -33,8 +38,13 @@ void _seed(Database db) {
   );
   db.execute(
     "insert into branches (id, cafe_id, slug, name, order_whatsapp, "
-    "delivery_price) values "
-    "('$_branchId', 'cafe-1', 'center', 'Центр', '996555112233', 150)",
+    "delivery_price, orders_enabled) values "
+    "('$_branchId', 'cafe-1', 'center', 'Центр', '996555112233', 150, 1)",
+  );
+  db.execute(
+    "insert into branches (id, cafe_id, slug, name, order_whatsapp, "
+    "delivery_price, orders_enabled) values "
+    "('$_siblingId', 'cafe-1', 'second', 'Второй', '996700112233', 100, 0)",
   );
   db.execute(
     "insert into branches (id, cafe_id, slug, name) values "
@@ -411,18 +421,99 @@ Future<void> main() async {
       untouched,
     );
 
-    // --- Право на заказы: выдаёт владелец платформы, не кафе ---
-    // Номер у филиала заполнен и остаётся на месте — важно, что при
-    // возврате права его не придётся набирать заново
-    db.execute("update cafes set orders_enabled = 0 where id = 'cafe-1'");
+    // --- Право на заказы: выдаёт владелец платформы, каждому филиалу своё ---
+    db.execute(
+      "insert into users (id, login, password_hash, role) values "
+      "('u3', 'root', 'x', 'superadmin')",
+    );
+    final boss = createSession(db, 'u3');
+
+    int right(String id) =>
+        db.select('select orders_enabled from branches where id = ?', [
+              id,
+            ]).first['orders_enabled']
+            as int;
+
+    // Сосед по кафе: номер вписан, права нет. Первый филиал кафе при этом
+    // заказы принимает — право не делится на всё кафе
+    (status, body) = await post({..._order(), 'branch_id': _siblingId});
+    expect(
+      'сосед по кафе без права заказы не принимает',
+      status == 403 && body['code'] == 'orders_off',
+      '$status $body',
+    );
+    var (pubStatus, pubBody) = await get('/api/public/branch/second');
+    expect(
+      'и номер соседа гостю не показывается',
+      pubStatus == 200 && (pubBody as Map)['order_whatsapp'] == '',
+      '$pubStatus $pubBody',
+    );
+    (pubStatus, pubBody) = await get('/api/public/branch/center');
+    expect(
+      'а у филиала с правом номер виден',
+      (pubBody as Map)['order_whatsapp'] == '996555112233',
+      pubBody,
+    );
+
+    // Включает и выключает только владелец платформы
+    (code, _) = await admin('PATCH', '/api/super/branches/$_siblingId', mine, {
+      'orders_enabled': true,
+    });
+    expect(
+      'кафе право себе не включает',
+      code == 403 && right(_siblingId) == 0,
+      code,
+    );
+    (code, _) = await admin('PATCH', '/api/admin/branches/$_siblingId', mine, {
+      'orders_enabled': true,
+    });
+    expect(
+      'и через свои настройки филиала тоже — поле отбрасывается',
+      code == 200 && right(_siblingId) == 0,
+      code,
+    );
+    (code, _) = await admin('PATCH', '/api/super/branches/$_siblingId', boss, {
+      'orders_enabled': true,
+    });
+    expect(
+      'владелец платформы право выдал — именно этому филиалу',
+      code == 200 && right(_siblingId) == 1,
+      code,
+    );
+    // Блюда в заказе — первого филиала, поэтому сохранятся строками
+    // «нет в меню»; проверяется здесь только право на приём
+    (status, body) = await post({
+      ..._order(),
+      'branch_id': _siblingId,
+      'code': 'SIBOK',
+    });
+    expect('и сосед начал принимать заказы', status == 201, '$status $body');
+
+    (code, _) = await admin('PATCH', '/api/super/branches/нет-такого', boss, {
+      'orders_enabled': true,
+    });
+    expect('несуществующий филиал — 404', code == 404, code);
+    (code, _) = await admin(
+      'PATCH',
+      '/api/super/branches/$_siblingId',
+      boss,
+      const <String, Object?>{},
+    );
+    expect('пустой запрос ничего не меняет — 400', code == 400, code);
+
+    // Снятое право: номер у филиала остаётся на месте — при возврате его
+    // не придётся набирать заново
+    (code, _) = await admin('PATCH', '/api/super/branches/$_branchId', boss, {
+      'orders_enabled': false,
+    });
+    expect('право снимается', code == 200 && right(_branchId) == 0, code);
     (status, body) = await post(_order(code: 'NORIGHT'));
     expect(
       'без права заказы не принимаются, хотя номер вписан',
       status == 403 && body['code'] == 'orders_off',
       '$status $body',
     );
-
-    var (pubStatus, pubBody) = await get('/api/public/branch/center');
+    (pubStatus, pubBody) = await get('/api/public/branch/center');
     expect(
       'и гостю номер не показывается — кнопки у него просто нет',
       pubStatus == 200 && (pubBody as Map)['order_whatsapp'] == '',
@@ -431,17 +522,20 @@ Future<void> main() async {
     expect(
       'но в базе номер цел',
       db
-              .select("select order_whatsapp from branches where id = ?", [
+              .select('select order_whatsapp from branches where id = ?', [
                 _branchId,
               ])
               .first['order_whatsapp'] ==
           '996555112233',
     );
 
-    db.execute("update cafes set orders_enabled = 1 where id = 'cafe-1'");
+    (code, _) = await admin('PATCH', '/api/super/branches/$_branchId', boss, {
+      'orders_enabled': true,
+    });
+    expect('право вернули', code == 200 && right(_branchId) == 1, code);
     (pubStatus, pubBody) = await get('/api/public/branch/center');
     expect(
-      'право вернули — номер снова виден',
+      'номер снова виден',
       (pubBody as Map)['order_whatsapp'] == '996555112233',
       pubBody,
     );

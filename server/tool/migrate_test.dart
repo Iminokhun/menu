@@ -230,22 +230,30 @@ void main() {
       branchRow,
     );
     // Право на заказы — услуга от владельца платформы, а не настройка
-    // кафе: задним числом оно не включается никому
-    final cafeCols = db
-        .select('pragma table_info(cafes)')
-        .map((r) => r['name'])
-        .toSet();
+    // кафе: задним числом оно не включается никому. И оно у каждого
+    // филиала своё, в кафе такой колонки быть не должно
     expect(
-      'у кафе появилось право orders_enabled',
-      cafeCols.contains('orders_enabled'),
-      cafeCols,
+      'право orders_enabled появилось у филиала',
+      orderCols.contains('orders_enabled'),
+      orderCols,
     );
     expect(
-      'и у старых кафе оно выключено',
-      db.select('select count(*) n from cafes where orders_enabled = 0')
+      'и у старых филиалов оно выключено',
+      db
+              .select('select count(*) n from branches where orders_enabled = 0')
               .first['n'] ==
-          db.select('select count(*) n from cafes').first['n'],
-      db.select('select id, orders_enabled from cafes').map((r) => r).toList(),
+          db.select('select count(*) n from branches').first['n'],
+      db
+          .select('select id, orders_enabled from branches')
+          .map((r) => r)
+          .toList(),
+    );
+    expect(
+      'у кафе этой колонки нет — право хранится в одном месте',
+      !db
+          .select('pragma table_info(cafes)')
+          .map((r) => r['name'])
+          .contains('orders_enabled'),
     );
     db.close();
 
@@ -263,6 +271,46 @@ void main() {
       again = e;
     }
     expect('повторный запуск без ошибки', again == null, again);
+
+    // Промежуточная версия держала право на заказы у кафе. Его значение
+    // должно достаться всем филиалам этого кафе, а колонка — уйти
+    final moved = '${dir.path}/moved.db';
+    final old2 = sqlite3.open(moved);
+    old2.execute(_oldSchema);
+    old2.execute(
+      "insert into cafes (id, name) values ('yes', 'С заказами'), "
+      "('no', 'Без заказов')",
+    );
+    old2.execute(
+      'alter table cafes add column orders_enabled integer not null default 0',
+    );
+    old2.execute("update cafes set orders_enabled = 1 where id = 'yes'");
+    old2.execute(
+      "insert into branches (id, cafe_id, slug, name) values "
+      "('b-yes', 'yes', 's1', 'Центр'), ('b-yes2', 'yes', 's2', 'Второй'), "
+      "('b-no', 'no', 's3', 'Чужой')",
+    );
+    old2.close();
+    final db3 = openDb(moved);
+    expect(
+      'право кафе досталось всем его филиалам и только им',
+      db3
+              .select(
+                'select id from branches where orders_enabled = 1 order by id',
+              )
+              .map((r) => r['id'])
+              .join(',') ==
+          'b-yes,b-yes2',
+      db3.select('select id, orders_enabled from branches').map((r) => r).toList(),
+    );
+    expect(
+      'а колонка у кафе убрана',
+      !db3
+          .select('pragma table_info(cafes)')
+          .map((r) => r['name'])
+          .contains('orders_enabled'),
+    );
+    db3.close();
   } finally {
     dir.deleteSync(recursive: true);
   }

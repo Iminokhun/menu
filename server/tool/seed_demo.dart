@@ -26,14 +26,14 @@ void main(List<String> args) {
   db.execute('delete from cafes');
   db.execute(
     "insert into cafes (id, name, is_active, max_branches, plan, paid_until, "
-    "show_in_catalog, orders_enabled) values "
-    "('c1', 'Демо', 1, 5, 'lifetime', '', 1, 1)",
+    "show_in_catalog) values "
+    "('c1', 'Демо', 1, 5, 'lifetime', '', 1)",
   );
   db.execute(
     "insert into branches (id, cafe_id, slug, name, slogan, address, "
-    "order_whatsapp, delivery_price, languages) values "
+    "order_whatsapp, delivery_price, orders_enabled, languages) values "
     "('b1', 'c1', 'demo', 'Демо-кафе', 'Проверка заказов', "
-    "'ул. Киевская 95, 2 этаж', '996555112233', 150, '[\"ru\",\"en\"]')",
+    "'ул. Киевская 95, 2 этаж', '996555112233', 150, 1, '[\"ru\",\"en\"]')",
   );
   db.execute(
     "insert into categories (id, branch_id, name, sort_order) values "
