@@ -62,6 +62,8 @@ void _syncBranch() {
         cur.qrUrl == b.qrUrl &&
         cur.orderWhatsapp == b.orderWhatsapp &&
         cur.deliveryPrice == b.deliveryPrice &&
+        cur.reviewWhatsapp == b.reviewWhatsapp &&
+        cur.reviewsEnabled == b.reviewsEnabled &&
         cur.style == b.style &&
         listEquals(cur.languages, b.languages);
     if (!same) currentBranch.value = b;

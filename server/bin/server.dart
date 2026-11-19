@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:menu_server/api.dart';
@@ -147,6 +148,13 @@ Future<void> main(List<String> args) async {
         }
         return api.router.call(req);
       });
+
+  // Отзывы живут 40 дней. Чистим при запуске — база могла простоять
+  // выключенной неделю — и раз в сутки, потому что сервер работает
+  // месяцами и одного раза при старте не случилось бы ни разу
+  final purged = purgeOldReviews(db);
+  if (purged > 0) stdout.writeln('Удалено отзывов старше 40 дней: $purged');
+  Timer.periodic(const Duration(hours: 24), (_) => purgeOldReviews(db));
 
   final server = await io.serve(handler, InternetAddress.anyIPv4, port);
   stdout.writeln('Menu API: http://${server.address.address}:${server.port}');

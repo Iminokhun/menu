@@ -5,6 +5,7 @@ import '../../database.dart';
 import '../../models/branch.dart';
 import 'admin_categories_screen.dart';
 import 'admin_orders_screen.dart';
+import 'admin_reviews_screen.dart';
 import 'admin_products_screen.dart';
 import 'admin_shop_screen.dart';
 import 'admin_style_screen.dart';
@@ -177,35 +178,43 @@ class _AdminShellState extends State<AdminShell> {
                 ),
                 const SizedBox(height: 6),
                 _NavItem(
+                  icon: Icons.star_border_rounded,
+                  activeIcon: Icons.star_rounded,
+                  label: 'Отзывы',
+                  isActive: _selectedIndex == 1,
+                  onTap: () => setState(() => _selectedIndex = 1),
+                ),
+                const SizedBox(height: 6),
+                _NavItem(
                   icon: Icons.category_outlined,
                   activeIcon: Icons.category,
                   label: 'Категории',
-                  isActive: _selectedIndex == 1,
-                  onTap: () => setState(() => _selectedIndex = 1),
+                  isActive: _selectedIndex == 2,
+                  onTap: () => setState(() => _selectedIndex = 2),
                 ),
                 const SizedBox(height: 6),
                 _NavItem(
                   icon: Icons.fastfood_outlined,
                   activeIcon: Icons.fastfood,
                   label: 'Товары',
-                  isActive: _selectedIndex == 2,
-                  onTap: () => setState(() => _selectedIndex = 2),
+                  isActive: _selectedIndex == 3,
+                  onTap: () => setState(() => _selectedIndex = 3),
                 ),
                 const SizedBox(height: 6),
                 _NavItem(
                   icon: Icons.store_outlined,
                   activeIcon: Icons.store,
                   label: 'Филиал',
-                  isActive: _selectedIndex == 3,
-                  onTap: () => setState(() => _selectedIndex = 3),
+                  isActive: _selectedIndex == 4,
+                  onTap: () => setState(() => _selectedIndex = 4),
                 ),
                 const SizedBox(height: 6),
                 _NavItem(
                   icon: Icons.palette_outlined,
                   activeIcon: Icons.palette,
                   label: 'Оформление',
-                  isActive: _selectedIndex == 4,
-                  onTap: () => setState(() => _selectedIndex = 4),
+                  isActive: _selectedIndex == 5,
+                  onTap: () => setState(() => _selectedIndex = 5),
                 ),
 
                 const Spacer(),
@@ -255,6 +264,7 @@ class _AdminShellState extends State<AdminShell> {
                       // «Заказы» должны знать, открыты ли они: иначе опрос
                       // сервера шёл бы и с других вкладок
                       AdminOrdersScreen(active: _selectedIndex == 0),
+                      AdminReviewsScreen(active: _selectedIndex == 1),
                       const AdminCategoriesScreen(),
                       const AdminProductsScreen(),
                       const AdminShopScreen(),

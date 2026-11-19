@@ -43,10 +43,27 @@ class Branch {
   /// Стоимость доставки. 0 — бесплатно.
   final double deliveryPrice;
 
-  /// Можно ли вообще заказать в этом филиале. Номер проверяется ещё раз
-  /// здесь: в сохранённой копии меню от старой версии его может не быть
-  /// вовсе или он может быть испорчен — тогда ссылка вела бы в никуда.
-  bool get canOrderByWhatsapp => RegExp(r'^\d{10,15}$').hasMatch(orderWhatsapp);
+  /// Куда уходит отзыв гостя. Обычно это личный номер владельца, а не тот,
+  /// что принимает заказы. Пусто — отзыв просто сохраняется на сервере.
+  final String reviewWhatsapp;
+
+  /// Выдано ли филиалу право принимать отзывы. Решает владелец платформы.
+  /// В отличие от заказов, пустой номер право не отменяет: кнопка у гостя
+  /// есть и без WhatsApp.
+  final bool reviewsEnabled;
+
+  /// Номер для ссылки `wa.me`: только цифры с кодом страны. Проверяется и
+  /// здесь, на клиенте: в сохранённой копии меню от старой версии его может
+  /// не быть вовсе или он может быть испорчен — тогда ссылка вела бы в
+  /// никуда.
+  static final _waPhone = RegExp(r'^\d{10,15}$');
+
+  /// Можно ли вообще заказать в этом филиале
+  bool get canOrderByWhatsapp => _waPhone.hasMatch(orderWhatsapp);
+
+  /// Уйдёт ли отзыв ещё и в WhatsApp. Само право на отзывы — отдельно,
+  /// в [reviewsEnabled]: без номера отзывы всё равно принимаются
+  bool get canSendReviewToWhatsapp => _waPhone.hasMatch(reviewWhatsapp);
 
   const Branch({
     required this.id,
@@ -64,6 +81,8 @@ class Branch {
     this.languages = const ['ru'],
     this.orderWhatsapp = '',
     this.deliveryPrice = 0,
+    this.reviewWhatsapp = '',
+    this.reviewsEnabled = false,
   });
 
   /// Подстановки на случай пустых полей живут здесь, а не на экране:
@@ -87,6 +106,10 @@ class Branch {
       languages: _languages(json['languages']),
       orderWhatsapp: (json['order_whatsapp'] as String?) ?? '',
       deliveryPrice: jsonDouble(json['delivery_price']),
+      // Старая копия меню этих ключей не знает: отзывы просто не появятся,
+      // пока меню не обновится
+      reviewWhatsapp: (json['review_whatsapp'] as String?) ?? '',
+      reviewsEnabled: json['reviews_enabled'] == true,
     );
   }
 

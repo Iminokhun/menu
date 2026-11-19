@@ -255,6 +255,37 @@ void main() {
           .map((r) => r['name'])
           .contains('orders_enabled'),
     );
+    // Отзывы гостей: таблица создаётся сама, две колонки филиала надо было
+    // досоздать. Право задним числом не выдаётся никому
+    expect(
+      'таблица reviews появилась',
+      db
+              .select("select count(*) n from sqlite_master where name = 'reviews'")
+              .first['n'] ==
+          1,
+    );
+    final reviewCols = db
+        .select('pragma table_info(branches)')
+        .map((r) => r['name'])
+        .toSet();
+    expect(
+      'у филиала появились reviews_enabled и review_whatsapp',
+      reviewCols.contains('reviews_enabled') &&
+          reviewCols.contains('review_whatsapp'),
+      reviewCols,
+    );
+    expect(
+      'у старых филиалов отзывы выключены, номер пуст',
+      db
+              .select('select count(*) n from branches where '
+                  "reviews_enabled = 0 and review_whatsapp = ''")
+              .first['n'] ==
+          db.select('select count(*) n from branches').first['n'],
+      db
+          .select('select id, reviews_enabled, review_whatsapp from branches')
+          .map((r) => r)
+          .toList(),
+    );
     db.close();
 
     // Повторный запуск ничего не ломает

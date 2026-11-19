@@ -29,9 +29,9 @@ class ApiError implements Exception {
 /// Поля, которые клиенту разрешено писать. Всё остальное (id, cafe_id,
 /// branch_id у существующих строк) из запроса молча отбрасывается —
 /// так кафе не переложит свой товар в чужой филиал подменой поля.
-/// `orders_enabled` здесь намеренно нет: право принимать заказы выдаёт
+/// `orders_enabled` и `reviews_enabled` здесь намеренно нет: права выдаёт
 /// владелец платформы (`PATCH /api/super/branches/<id>`), и кафе не может
-/// включить его себе само.
+/// включить их себе само. Номера WhatsApp при этом кафе вписывает своё.
 const _branchFields = {
   'slug',
   'name',
@@ -44,9 +44,14 @@ const _branchFields = {
   'languages',
   'order_whatsapp',
   'delivery_price',
+  'review_whatsapp',
   ...styleColumns,
   ...locationColumns,
 };
+
+/// Права филиала, которые меняет только владелец платформы. Белый список,
+/// а не «пишем что пришло»: этим запросом правами всё и ограничивается.
+const _branchFeatureFields = {'orders_enabled', 'reviews_enabled'};
 
 /// У заказа кафе меняет только отметку «готово». Состав, суммы и контакты
 /// гостя — запись о том, что было, её не правят
@@ -140,6 +145,12 @@ const _maxText = {
   'guest_phone': 30,
   'comment': 300,
   'address': _maxLocationText,
+  'waiter': 60,
+  'table_no': 20,
+  // Имя проверки, а не колонки: отзыв пишется в reviews.comment. Предел
+  // отдельный и больше заказного — жалоба на 300 знаков это обрезанная
+  // жалоба, а читать её будет человек, а не касса
+  'review_comment': 1000,
 };
 const _maxTextDefault = 500;
 
@@ -203,13 +214,21 @@ class Api {
     UploadLimiter? uploadLimiter,
     SlidingWindowLimiter? orderIpLimiter,
     SlidingWindowLimiter? orderBranchLimiter,
+    SlidingWindowLimiter? reviewIpLimiter,
+    SlidingWindowLimiter? reviewBranchLimiter,
   }) : _uploads = uploadLimiter ?? UploadLimiter(),
        _orderIp =
            orderIpLimiter ??
            SlidingWindowLimiter(max: 5, window: const Duration(minutes: 5)),
        _orderBranch =
            orderBranchLimiter ??
-           SlidingWindowLimiter(max: 60, window: const Duration(minutes: 10));
+           SlidingWindowLimiter(max: 60, window: const Duration(minutes: 10)),
+       _reviewIp =
+           reviewIpLimiter ??
+           SlidingWindowLimiter(max: 3, window: const Duration(minutes: 10)),
+       _reviewBranch =
+           reviewBranchLimiter ??
+           SlidingWindowLimiter(max: 30, window: const Duration(minutes: 10));
 
   /// Сколько заказов подряд принимается с одного адреса
   final SlidingWindowLimiter _orderIp;
@@ -217,6 +236,14 @@ class Api {
   /// И сколько — одним филиалом: это предел и на наплыв с разных адресов,
   /// и на рост таблицы
   final SlidingWindowLimiter _orderBranch;
+
+  /// Пределы для отзывов — свои, не общие с заказами. Общий счётчик значил
+  /// бы, что оставленный отзыв съедает попытку заказа: гость, похваливший
+  /// обед, не смог бы заказать ужин, а шквал отзывов закрыл бы приём
+  /// заказов, то есть деньги. Предел по филиалу здесь даже важнее, чем у
+  /// заказов: отзыв не стоит гостю даже нажатия «Отправить» в WhatsApp
+  final SlidingWindowLimiter _reviewIp;
+  final SlidingWindowLimiter _reviewBranch;
 
   /// Сколько места на диске может занять одно кафе (фото и 3D-модели)
   final int uploadQuotaBytes;
@@ -239,6 +266,8 @@ class Api {
   static const _unpaidGuest = 'Меню временно недоступно';
   static const _tooManyOrders =
       'Слишком много заказов подряд. Подождите немного';
+  static const _tooManyReviews =
+      'Слишком много отзывов подряд. Подождите немного';
 
   /// Значение поля запроса как строка; не строка — пусто.
   static String _str(Object? v) => v is String ? v : '';
@@ -261,6 +290,7 @@ class Api {
     r.get('/api/public/menu/<branchId>', _publicMenu);
     r.get('/api/public/cafes', _publicCafes);
     r.post('/api/public/orders', _createOrder);
+    r.post('/api/public/reviews', _createReview);
 
     // ---------- Для поисковиков (seo.dart) ----------
     r.get('/kafe', _seoCatalog);
@@ -292,6 +322,7 @@ class Api {
     r.delete('/api/admin/products/<id>', _deleteProduct);
     r.post('/api/admin/products/copy', _copyProducts);
 
+    r.get('/api/admin/reviews', _listReviews);
     r.get('/api/admin/orders', _listOrders);
     r.patch('/api/admin/orders/<id>', _updateOrder);
 
@@ -306,7 +337,7 @@ class Api {
     r.get('/api/super/cafes/<id>/payments', _listPayments);
     r.post('/api/super/cafes/<id>/payments', _addPayment);
     r.post('/api/super/cafes/<id>/upload', _uploadCafeImage);
-    r.patch('/api/super/branches/<id>', _updateBranchOrders);
+    r.patch('/api/super/branches/<id>', _updateBranchFeatures);
     r.patch('/api/super/users/<id>', _updateUser);
     r.delete('/api/super/users/<id>', _deleteUser);
 
@@ -664,7 +695,7 @@ class Api {
             'Ссылка на карту должна начинаться с https://',
           );
         }
-      case 'order_whatsapp':
+      case 'order_whatsapp' || 'review_whatsapp':
         if (v is String) {
           final digits = normalizeWaPhone(
             v,
@@ -809,6 +840,11 @@ class Api {
     // Нет права — для гостя это просто незаполненный номер: кнопки заказа
     // нет, и объяснять ему нечего. Сам номер при этом остаётся в базе
     if (m['orders_enabled'] != true) m['order_whatsapp'] = '';
+    // Отзывы устроены иначе: номер и право не связаны. Нет права — нет и
+    // кнопки, поэтому номер тоже затираем; но если право есть, а номер
+    // пуст, кнопка у гостя остаётся и отзыв просто ляжет на сервер.
+    // Признак для кнопки — сам reviews_enabled, он уезжает гостю как есть
+    if (m['reviews_enabled'] != true) m['review_whatsapp'] = '';
     return _json(m);
   }
 
@@ -1163,6 +1199,104 @@ class Api {
       'created_at': row['created_at'],
     };
   }
+
+  /// Отзыв гостя с сайта. Открыт всем: гость никуда не входит.
+  ///
+  /// Текст сообщения, как и у заказа, собирает клиент, и гость может его
+  /// поправить перед отправкой — а может и не отправить вовсе. Что было на
+  /// самом деле, записано здесь, и кафе смотрит в свой список отзывов.
+  Future<Response> _createReview(Request req) async {
+    final body = await _body(req);
+    // Предел — до любой работы с базой
+    if (!_reviewIp.tryAcquire(clientIp(req))) {
+      throw ApiError(429, _tooManyReviews, code: 'too_often');
+    }
+    final branchId = _str(body['branch_id']);
+    if (branchId.isEmpty || branchId.length > _maxIdLength) {
+      throw ApiError(400, 'Не указан филиал');
+    }
+
+    final rows = db.select(
+      '''
+      select b.* from branches b join cafes c on c.id = b.cafe_id
+       where b.id = ? and b.is_active = 1 and c.is_active = 1''',
+      [branchId],
+    );
+    if (rows.isEmpty) throw ApiError(404, 'Филиал не найден');
+    final branch = rows.first;
+    // Предел по филиалу — только после того, как филиал нашёлся: ключом
+    // обязан быть существующий id, иначе ключи заводит кто угодно
+    // (подробнее — в _createOrder)
+    if (!_reviewBranch.tryAcquire(branch['id'] as String)) {
+      throw ApiError(429, _tooManyReviews, code: 'too_often');
+    }
+    if (_access(branch['cafe_id'] as String).access == Access.expired) {
+      throw ApiError(403, _unpaidGuest, code: 'unpaid');
+    }
+    // Условие здесь одно — право. Номер WhatsApp намеренно не проверяется,
+    // и это не недосмотр: без номера отзыв всё равно принимается и ложится
+    // в админку кафе, просто WhatsApp у гостя не открывается. Не «чинить»
+    // по образцу заказов, где нет номера — нет и кнопки
+    if ((branch['reviews_enabled'] as int? ?? 0) == 0) {
+      throw ApiError(
+        403,
+        'Отзывы в этом кафе пока не принимаются',
+        code: 'reviews_off',
+      );
+    }
+
+    final rating = body['rating'];
+    if (rating is! int || rating < 1 || rating > 5) {
+      throw ApiError(400, 'Поставьте оценку от 1 до 5');
+    }
+    // Имя официанта и номер стола — в одну строку: перенос внутри них
+    // рисует в карточке отзыва строку, похожую на служебную
+    final waiter = _line('waiter', _str(body['waiter']));
+    final tableNo = _line('table_no', _str(body['table_no']));
+    // А в самом отзыве перенос осмыслен, как в адресе заказа
+    final comment = _text('review_comment', _str(body['comment']));
+    final lang = _str(body['lang']);
+    if (lang.isNotEmpty && !menuLanguages.contains(lang)) {
+      throw ApiError(400, 'Неизвестный язык');
+    }
+
+    // Повтор: клиент переотправляет отзыв, когда сервер не ответил, —
+    // первый запрос мог дойти, а ответ потеряться. Кода, как у заказа,
+    // здесь нет, поэтому сравниваем сам отзыв
+    final same = db.select(
+      '''
+      select * from reviews
+       where branch_id = ? and rating = ? and waiter = ? and table_no = ?
+         and comment = ? and created_at > datetime('now', '-2 minutes')
+       order by created_at desc limit 1''',
+      [branchId, rating, waiter, tableNo, comment],
+    );
+    if (same.isNotEmpty) return _json(_reviewReceipt(same.first));
+
+    final id = newId();
+    try {
+      _insert('reviews', {
+        'id': id,
+        'branch_id': branchId,
+        'rating': rating,
+        'waiter': waiter,
+        'table_no': tableNo,
+        'comment': comment,
+        'lang': lang,
+      });
+    } on SqliteException catch (e) {
+      _sqlError(e);
+    }
+    final saved = db.select('select * from reviews where id = ?', [id]).first;
+    return _json(_reviewReceipt(saved), status: 201);
+  }
+
+  /// Что возвращается гостю после отзыва: только что он сохранён. Текст
+  /// обратно не отдаём — пересылать его ещё раз незачем
+  Map<String, Object?> _reviewReceipt(Row row) => {
+    'id': row['id'],
+    'created_at': row['created_at'],
+  };
 
   // ======================================================================
   //  Вход
@@ -1700,6 +1834,53 @@ class Api {
     );
   }
 
+  // ======================================================================
+  //  Отзывы (кафе)
+  // ======================================================================
+
+  /// Отзывы филиала, новые сверху. Их видит только своё кафе: публичного
+  /// чтения отзывов нет и быть не должно — там имя официанта и жалоба на
+  /// него.
+  ///
+  /// Менять и удалять отзыв нельзя вовсе: в нём нечего править, а кафе,
+  /// которое стирает плохие отзывы, обманывает само себя. Старые уходят
+  /// сами через reviewMaxAgeDays дней (purgeOldReviews).
+  Response _listReviews(Request req) {
+    final u = _cafeAdmin(req);
+    final q = req.url.queryParameters;
+    final branch = _ownBranch(u, q['branch_id']);
+    final where = StringBuffer('branch_id = ?');
+    final args = <Object?>[branch['id']];
+    // Фильтр «плохие» считается на сервере, а не на экране: при пределе в
+    // сотню строк плохие отзывы иначе могли бы в выборку и не попасть — а
+    // ради них этот экран и открывают
+    final maxRating = q['max_rating'];
+    if (maxRating != null && maxRating.isNotEmpty) {
+      final n = int.tryParse(maxRating);
+      if (n == null || n < 1 || n > 5) {
+        throw ApiError(400, 'Оценка — число от 1 до 5');
+      }
+      where.write(' and rating <= ?');
+      args.add(n);
+    }
+    final before = q['before'];
+    if (before != null && before.isNotEmpty) {
+      where.write(' and created_at < ?');
+      args.add(before);
+    }
+    // Предел обязателен — по той же причине, что и в списке заказов
+    args.add((int.tryParse(q['limit'] ?? '') ?? 50).clamp(1, 200));
+    return _json(
+      _outAll(
+        req,
+        db.select(
+          'select * from reviews where $where order by created_at desc limit ?',
+          args,
+        ),
+      ),
+    );
+  }
+
   /// Загрузка картинки или 3D-модели: тело запроса — сами байты, расширение
   /// в `?ext=`, префикс имени в `?prefix=`. Файлы каждого кафе лежат в своей
   /// папке.
@@ -1833,12 +2014,14 @@ class Api {
     final users = db.select('''
       select id, cafe_id, login, is_active, created_at from users
        where role = 'cafe_admin' order by created_at''');
-    // order_whatsapp — чтобы на экране было видно не только выданное
-    // право, но и вписало ли кафе номер: без номера заказы всё равно не
-    // идут, а выглядит это как поломка
+    // Номера — чтобы на экране было видно не только выданное право, но и
+    // вписало ли кафе номер. У заказов без номера ничего не идёт и это
+    // выглядит как поломка; у отзывов без номера они просто не дублируются
+    // в WhatsApp, и это тоже надо различать
     final branches = db.select(
       'select id, cafe_id, slug, name, is_active, orders_enabled, '
-      'order_whatsapp from branches order by sort_order, name',
+      'order_whatsapp, reviews_enabled, review_whatsapp '
+      'from branches order by sort_order, name',
     );
     return _json(
       cafes.map((c) {
@@ -1992,23 +2175,24 @@ class Api {
     return _json(_cafeById(id));
   }
 
-  /// Право принимать заказы с сайта: включает и выключает только владелец
-  /// платформы, и каждому филиалу отдельно. Больше этим запросом в филиале
-  /// ничего не меняется — остальные поля кафе правит у себя само.
+  /// Права филиала, которые выдаёт владелец платформы: приём заказов и
+  /// приём отзывов. Каждое — отдельная услуга, и каждому филиалу своё.
+  /// Больше этим запросом в филиале ничего не меняется — названия и номера
+  /// кафе правит у себя само.
+  ///
   /// Выключение мгновенно убирает кнопку у гостей и закрывает приём, а
-  /// номер WhatsApp остаётся: вернём право — набирать заново не придётся
-  Future<Response> _updateBranchOrders(Request req, String id) async {
+  /// номера WhatsApp остаются: вернём право — набирать заново не придётся
+  Future<Response> _updateBranchFeatures(Request req, String id) async {
     _superadmin(req);
     final rows = db.select('select id from branches where id = ?', [id]);
     if (rows.isEmpty) throw ApiError(404, 'Филиал не найден');
     final body = await _body(req);
-    if (!body.containsKey('orders_enabled')) {
-      throw ApiError(400, 'Нечего менять');
-    }
-    db.execute('update branches set orders_enabled = ? where id = ?', [
-      toSql(body['orders_enabled'] == true),
-      id,
-    ]);
+    final data = {
+      for (final f in _branchFeatureFields)
+        if (body.containsKey(f)) f: toSql(body[f] == true),
+    };
+    if (data.isEmpty) throw ApiError(400, 'Нечего менять');
+    _update('branches', id, data);
     return _json(
       _out(req, db.select('select * from branches where id = ?', [id]).first),
     );

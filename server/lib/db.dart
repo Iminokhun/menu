@@ -99,6 +99,14 @@ create table if not exists branches (
   -- принимать некому. Пока право не выдано, номер WhatsApp гостю не
   -- показывается и заказы не принимаются, даже если номер заполнен.
   orders_enabled integer not null default 0,
+  -- Куда уходят отзывы гостей. НЕ тот номер, что для заказов: жалоба на
+  -- официанта не должна попадать на телефон кухни, где эти же официанты и
+  -- стоят. Пусто — отзыв просто сохраняется на сервере
+  review_whatsapp text  not null default '',
+  -- Право принимать отзывы. Выдаёт только superadmin, каждому филиалу своё —
+  -- как orders_enabled. Но, в отличие от заказов, пустой номер право не
+  -- отменяет: кнопка у гостя есть и без WhatsApp
+  reviews_enabled integer not null default 0,
   is_active  integer not null default 1,
   sort_order integer not null default 0
 );
@@ -166,8 +174,30 @@ create table if not exists orders (
   created_at     text not null default (datetime('now'))
 );
 
+-- Отзывы гостей с сайта. Здесь личные данные сразу двух людей: имя
+-- официанта, на которого жалуются, и свободный текст гостя, куда он может
+-- вписать что угодно, вплоть до своего телефона. Поэтому читает их только
+-- кафе через /api/admin/reviews: публичного чтения нет, гостям чужие отзывы
+-- не показываются, в SEO-страницы они не попадают.
+-- Строки старше 40 дней сервер удаляет сам (purgeOldReviews).
+create table if not exists reviews (
+  id         text primary key,
+  branch_id  text    not null references branches(id) on delete cascade,
+  -- Единственное обязательное поле: без оценки отправлять нечего
+  rating     integer not null check (rating between 1 and 5),
+  waiter     text    not null default '',
+  -- Текст, а не число: гости пишут «12», «VIP-2», «терраса».
+  -- И table — зарезервированное слово SQL, отсюда _no
+  table_no   text    not null default '',
+  comment    text    not null default '',
+  -- На каком языке гость читал меню
+  lang       text    not null default '',
+  created_at text    not null default (datetime('now'))
+);
+
 create index if not exists branches_cafe_idx    on branches (cafe_id, sort_order);
 create index if not exists orders_branch_idx     on orders (branch_id, created_at);
+create index if not exists reviews_branch_idx    on reviews (branch_id, created_at);
 create index if not exists categories_branch_idx on categories (branch_id, sort_order);
 create index if not exists products_branch_idx   on products (branch_id, sort_order);
 create index if not exists sessions_user_idx     on sessions (user_id);
@@ -288,6 +318,22 @@ void _migrate(Database db) {
     db.execute('alter table cafes drop column orders_enabled');
   }
 
+  // Отзывы гостей: право и номер WhatsApp. Обе колонки появились разом,
+  // поэтому и проверка по одной. Право не включается задним числом никому:
+  // это отдельная услуга, которую владелец платформы выдаёт сам
+  if (!branchCols.contains('reviews_enabled')) {
+    inTransaction(db, () {
+      db.execute(
+        'alter table branches add column reviews_enabled integer not null '
+        'default 0',
+      );
+      db.execute(
+        "alter table branches add column review_whatsapp text not null "
+        "default ''",
+      );
+    });
+  }
+
   // Языки меню. Раньше их было три постоянных — филиалы, заведённые тогда,
   // их и сохраняют
   if (!branchCols.contains('languages')) {
@@ -351,6 +397,27 @@ void _moveTranslations(
   });
 }
 
+/// Сколько дней живут отзывы. Старше — удаляются: это личные данные сразу
+/// двух людей (гостя и официанта), и держать их дольше, чем нужно кафе,
+/// незачем. Кафе предупреждено об этом прямо в списке отзывов.
+const reviewMaxAgeDays = 40;
+
+/// Удалить отзывы старше [days] дней. Возвращает, сколько удалилось.
+///
+/// Отдельного индекса по created_at нет намеренно: таблица по построению
+/// крошечная — это 40 дней потока, зажатого ограничителем частоты, — а
+/// второй индекс удорожал бы каждую вставку. Полный проход раз в сутки
+/// здесь дешевле.
+///
+/// created_at пишется `datetime('now')`, то есть в UTC, и сравнивается с
+/// UTC же. Локальное время из Dart сюда подставлять нельзя.
+int purgeOldReviews(Database db, {int days = reviewMaxAgeDays}) {
+  db.execute("delete from reviews where created_at < datetime('now', ?)", [
+    '-$days days',
+  ]);
+  return db.updatedRows;
+}
+
 /// [body] целиком или ничего: схема не остаётся наполовину обновлённой.
 void inTransaction(Database db, void Function() body) {
   db.execute('begin');
@@ -382,6 +449,7 @@ const boolColumns = {
   'is_visible',
   'show_in_catalog',
   'orders_enabled',
+  'reviews_enabled',
 };
 
 Map<String, Object?> rowToJson(Row row) {

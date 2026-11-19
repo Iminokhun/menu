@@ -652,33 +652,57 @@ class _SuperAdminShellState extends State<SuperAdminShell> {
     );
   }
 
-  /// Филиал и его право принимать заказы с сайта. Право — отдельная
-  /// услуга, которую выдаём мы, и каждому филиалу своё: у кафе бывает
+  /// Филиал и его права: приём заказов и приём отзывов. Оба — отдельные
+  /// услуги, которые выдаём мы, и каждому филиалу свои: у кафе бывает
   /// точка с доставкой и точка, где заказы принимать некому.
   ///
-  /// Номер WhatsApp вписывает само кафе у себя, поэтому «право выдано, а
+  /// Номера WhatsApp вписывает само кафе у себя, поэтому «право выдано, а
   /// номера нет» — обычное состояние, а не поломка. Говорим об этом прямо:
-  /// иначе кафе скажет «не работает», а искать будет нечего
+  /// иначе кафе скажет «не работает», а искать будет нечего. У заказов без
+  /// номера не работает ничего, у отзывов — только пересылка в WhatsApp,
+  /// поэтому цвета у них разные.
+  ///
+  /// Оба права — за одной кнопкой меню, а не двумя кнопками в строке:
+  /// прав со временем станет больше, а ширина строки — нет.
   Widget _branchRow(Map<String, dynamic> b) {
     final orders = b['orders_enabled'] == true;
-    final hasPhone = ((b['order_whatsapp'] as String?) ?? '').isNotEmpty;
-    final color = !orders
+    final ordersPhone = ((b['order_whatsapp'] as String?) ?? '').isNotEmpty;
+    final reviews = b['reviews_enabled'] == true;
+    final reviewsPhone = ((b['review_whatsapp'] as String?) ?? '').isNotEmpty;
+
+    final ordersColor = !orders
         ? Colors.white38
-        : hasPhone
+        : ordersPhone
             ? Colors.green
             : Colors.orangeAccent;
-    final state = !orders
-        ? 'заказы с сайта не подключены'
-        : hasPhone
-            ? 'принимает заказы с сайта'
-            : 'подключено, но кафе не вписало номер WhatsApp';
-    final off = b['is_active'] == true ? '' : 'филиал выключен · ';
+    final reviewsColor = !reviews
+        ? Colors.white38
+        : reviewsPhone
+            ? Colors.green
+            : Colors.amberAccent;
+    final state = [
+      if (b['is_active'] != true) 'филиал выключен',
+      !orders
+          ? 'заказы не подключены'
+          : ordersPhone
+              ? 'заказы принимает'
+              : 'заказы: кафе не вписало номер',
+      !reviews
+          ? 'отзывы не подключены'
+          : reviewsPhone
+              ? 'отзывы принимает'
+              : 'отзывы: только в админке, без WhatsApp',
+    ].join(' · ');
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         children: [
           Icon(orders ? Icons.shopping_bag : Icons.shopping_bag_outlined,
-              color: color, size: 16),
+              color: ordersColor, size: 16),
+          const SizedBox(width: 4),
+          Icon(reviews ? Icons.star_rounded : Icons.star_border_rounded,
+              color: reviewsColor, size: 16),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
@@ -691,21 +715,44 @@ class _SuperAdminShellState extends State<SuperAdminShell> {
                         color: Colors.white70,
                         fontSize: 13,
                         fontWeight: FontWeight.w600)),
-                Text('$off$state',
+                Text(state,
                     maxLines: 2,
-                    style: TextStyle(color: color, fontSize: 11)),
+                    style: const TextStyle(color: Colors.white38, fontSize: 11)),
               ],
             ),
           ),
-          TextButton(
-            onPressed: () => _run(
-                () => api.patch('/api/super/branches/${b['id']}',
-                    {'orders_enabled': !orders}),
-                orders
-                    ? 'Заказы с сайта выключены: ${b['name']}'
-                    : 'Заказы с сайта включены: ${b['name']}'),
-            child: Text(orders ? 'Выключить' : 'Включить',
-                style: const TextStyle(color: _accent, fontSize: 13)),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_horiz, color: Colors.white54, size: 20),
+            color: _surface,
+            tooltip: 'Права филиала',
+            onSelected: (a) {
+              switch (a) {
+                case 'orders':
+                  _run(
+                      () => api.patch('/api/super/branches/${b['id']}',
+                          {'orders_enabled': !orders}),
+                      orders
+                          ? 'Заказы с сайта выключены: ${b['name']}'
+                          : 'Заказы с сайта включены: ${b['name']}');
+                case 'reviews':
+                  _run(
+                      () => api.patch('/api/super/branches/${b['id']}',
+                          {'reviews_enabled': !reviews}),
+                      reviews
+                          ? 'Отзывы выключены: ${b['name']}'
+                          : 'Отзывы включены: ${b['name']}');
+              }
+            },
+            itemBuilder: (_) => [
+              _menuItem(
+                  'orders',
+                  orders ? Icons.shopping_bag_outlined : Icons.shopping_bag,
+                  orders ? 'Выключить заказы' : 'Включить заказы'),
+              _menuItem(
+                  'reviews',
+                  reviews ? Icons.star_border_rounded : Icons.star_rounded,
+                  reviews ? 'Выключить отзывы' : 'Включить отзывы'),
+            ],
           ),
         ],
       ),

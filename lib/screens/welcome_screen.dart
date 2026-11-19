@@ -18,8 +18,10 @@ import '../l10n/app_localizations.dart';
 import '../l10n/translation_service.dart';
 import '../widgets/lang_switcher.dart';
 import '../responsive.dart';
+import '../review/review_sender.dart';
 import 'catalog_screen.dart';
 import 'menu_screen.dart';
+import 'review_sheet.dart';
 import 'search_screen.dart';
 import 'admin/admin_shell.dart';
 import '../api/api_client.dart';
@@ -318,6 +320,33 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     );
   }
 
+  /// «Оставить отзыв» — только там, где отзывы подключены этому филиалу
+  /// и только в браузере: на планшете в зале отзыв о собственном официанте
+  /// оставлять некому, да и открыть WhatsApp там нечем.
+  ///
+  /// Кнопки нет вовсе, а не серая: кнопка, которая ничего не делает,
+  /// выглядит сломанной — то же правило, что у «Оформить заказ»
+  Widget _reviewButton(ThemeConfig config) {
+    final branch = currentBranch.value;
+    final sender = ReviewSender.forBranch(branch);
+    if (!sender.canReview || branch == null) return const SizedBox.shrink();
+    return TextButton.icon(
+      onPressed: () {
+        HapticFeedback.selectionClick();
+        showReviewSheet(context, branch: branch, sender: sender);
+      },
+      icon: Icon(Icons.star_outline_rounded, size: 18, color: config.accent),
+      label: Text(
+        AppLocalizations.of(context).leaveReview,
+        style: GoogleFonts.manrope(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: config.accent,
+        ),
+      ),
+    );
+  }
+
   void _openSearch() {
     HapticFeedback.selectionClick();
     Navigator.push(context, MaterialPageRoute(builder: (_) => const SearchScreen()));
@@ -470,6 +499,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               LangSwitcher(config: config),
               _searchButton(config),
               _refreshButton(config),
+              _reviewButton(config),
             ],
           ),
           _offlineNote(config),
@@ -611,6 +641,13 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               _searchButton(config),
               _refreshButton(config),
             ],
+          ),
+          // Своей строкой, а не шестой иконкой в ряду выше: на узком
+          // телефоне он и так впритык, а подпись у этой кнопки нужна —
+          // одну звезду приняли бы за оценку, а не за «оставить отзыв»
+          Align(
+            alignment: Alignment.centerRight,
+            child: _reviewButton(config),
           ),
           _offlineNote(config),
         ],

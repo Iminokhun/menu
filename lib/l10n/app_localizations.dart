@@ -63,6 +63,19 @@ class AppLocalizations {
       'searchStart': 'Введите название блюда',
       'nothingFound': 'Ничего не найдено',
       'found': 'Найдено',
+      // Отзыв
+      'leaveReview': 'Оставить отзыв',
+      'reviewTitle': 'ОТЗЫВ О КАФЕ',
+      'reviewRatingHint': 'Как вам у нас?',
+      'reviewWaiter': 'Имя официанта',
+      'reviewTable': 'Номер стола',
+      'reviewComment': 'Что понравилось или не понравилось',
+      'sendReview': 'ОТПРАВИТЬ ОТЗЫВ',
+      'reviewSentHint': 'Спасибо! Кафе увидит ваш отзыв',
+      'reviewSentWhatsappHint': 'Отзыв готов. Нажмите «Отправить» в WhatsApp',
+      'reviewFailed': 'Отзыв не сохранился. Попробуйте позже',
+      'reviewNotAvailable': 'Отзывы в этом кафе пока не принимаются',
+      'reviewTooOften': 'Слишком много отзывов подряд. Подождите немного',
     },
     'en': {
       'catalog': 'CATALOG',
@@ -111,6 +124,19 @@ class AppLocalizations {
       'searchStart': 'Type a dish name',
       'nothingFound': 'Nothing found',
       'found': 'Found',
+      // Отзыв
+      'leaveReview': 'Leave a review',
+      'reviewTitle': 'REVIEW',
+      'reviewRatingHint': 'How was it?',
+      'reviewWaiter': 'Waiter name',
+      'reviewTable': 'Table number',
+      'reviewComment': 'What you liked or did not',
+      'sendReview': 'SEND REVIEW',
+      'reviewSentHint': 'Thank you! The cafe will see your review',
+      'reviewSentWhatsappHint': 'Review is ready. Tap Send in WhatsApp',
+      'reviewFailed': 'The review was not saved. Try again later',
+      'reviewNotAvailable': 'This cafe does not take reviews yet',
+      'reviewTooOften': 'Too many reviews in a row. Please wait a little',
     },
     'tr': {
       'catalog': 'KATALOG',
@@ -159,6 +185,19 @@ class AppLocalizations {
       'searchStart': 'Yemek adını yazın',
       'nothingFound': 'Sonuç bulunamadı',
       'found': 'Bulunan',
+      // Отзыв
+      'leaveReview': 'Yorum bırakın',
+      'reviewTitle': 'YORUM',
+      'reviewRatingHint': 'Bizi nasıl buldunuz?',
+      'reviewWaiter': 'Garsonun adı',
+      'reviewTable': 'Masa numarası',
+      'reviewComment': 'Neyi beğendiniz, neyi beğenmediniz',
+      'sendReview': 'YORUMU GÖNDER',
+      'reviewSentHint': 'Teşekkürler! Kafe yorumunuzu görecek',
+      'reviewSentWhatsappHint': 'Yorum hazır. WhatsApp’ta Gönder’e dokunun',
+      'reviewFailed': 'Yorum kaydedilmedi. Daha sonra deneyin',
+      'reviewNotAvailable': 'Bu kafe henüz yorum almıyor',
+      'reviewTooOften': 'Arka arkaya çok fazla yorum. Biraz bekleyin',
     },
     'ky': {
       'catalog': 'КАТАЛОГ',
@@ -207,6 +246,19 @@ class AppLocalizations {
       'searchStart': 'Тамактын атын жазыңыз',
       'nothingFound': 'Эч нерсе табылган жок',
       'found': 'Табылды',
+      // Отзыв
+      'leaveReview': 'Пикир калтыруу',
+      'reviewTitle': 'ПИКИР',
+      'reviewRatingHint': 'Бизде кандай болду?',
+      'reviewWaiter': 'Официанттын аты',
+      'reviewTable': 'Үстөлдүн номери',
+      'reviewComment': 'Эмне жакты, эмне жаккан жок',
+      'sendReview': 'ПИКИРДИ ЖӨНӨТҮҮ',
+      'reviewSentHint': 'Рахмат! Кафе пикириңизди көрөт',
+      'reviewSentWhatsappHint': 'Пикир даяр. WhatsApp’та «Жөнөтүү» баскычын басыңыз',
+      'reviewFailed': 'Пикир сакталган жок. Кийинчерээк аракет кылыңыз',
+      'reviewNotAvailable': 'Бул кафе азырынча пикир кабыл албайт',
+      'reviewTooOften': 'Өтө көп пикир жөнөтүлдү. Бир аз күтө туруңуз',
     },
     'kk': {
       'catalog': 'КАТАЛОГ',
@@ -255,6 +307,19 @@ class AppLocalizations {
       'searchStart': 'Тағам атауын жазыңыз',
       'nothingFound': 'Ештеңе табылмады',
       'found': 'Табылды',
+      // Отзыв
+      'leaveReview': 'Пікір қалдыру',
+      'reviewTitle': 'ПІКІР',
+      'reviewRatingHint': 'Бізде қалай болды?',
+      'reviewWaiter': 'Даяшының аты',
+      'reviewTable': 'Үстел нөмірі',
+      'reviewComment': 'Не ұнады, не ұнамады',
+      'sendReview': 'ПІКІРДІ ЖІБЕРУ',
+      'reviewSentHint': 'Рахмет! Кафе пікіріңізді көреді',
+      'reviewSentWhatsappHint': 'Пікір дайын. WhatsApp-та «Жіберу» түймесін басыңыз',
+      'reviewFailed': 'Пікір сақталмады. Кейінірек көріңіз',
+      'reviewNotAvailable': 'Бұл кафе әзірге пікір қабылдамайды',
+      'reviewTooOften': 'Қатарынан тым көп пікір. Сәл күте тұрыңыз',
     },
     'uz': {
       'catalog': 'KATALOG',
@@ -303,6 +368,19 @@ class AppLocalizations {
       'searchStart': 'Taom nomini yozing',
       'nothingFound': 'Hech narsa topilmadi',
       'found': 'Topildi',
+      // Отзыв
+      'leaveReview': 'Fikr qoldirish',
+      'reviewTitle': 'FIKR',
+      'reviewRatingHint': 'Bizda qanday bo‘ldi?',
+      'reviewWaiter': 'Ofitsiant ismi',
+      'reviewTable': 'Stol raqami',
+      'reviewComment': 'Nima yoqdi, nima yoqmadi',
+      'sendReview': 'FIKRNI YUBORISH',
+      'reviewSentHint': 'Rahmat! Kafe fikringizni ko‘radi',
+      'reviewSentWhatsappHint': 'Fikr tayyor. WhatsApp’da «Yuborish»ni bosing',
+      'reviewFailed': 'Fikr saqlanmadi. Keyinroq urinib ko‘ring',
+      'reviewNotAvailable': 'Bu kafe hozircha fikr qabul qilmaydi',
+      'reviewTooOften': 'Ketma-ket juda ko‘p fikr. Biroz kuting',
     },
     'zh': {
       'catalog': '菜单',
@@ -351,6 +429,19 @@ class AppLocalizations {
       'searchStart': '请输入菜名',
       'nothingFound': '未找到结果',
       'found': '找到',
+      // Отзыв
+      'leaveReview': '留下评价',
+      'reviewTitle': '评价',
+      'reviewRatingHint': '您觉得怎么样？',
+      'reviewWaiter': '服务员姓名',
+      'reviewTable': '桌号',
+      'reviewComment': '哪里满意，哪里不满意',
+      'sendReview': '发送评价',
+      'reviewSentHint': '谢谢！餐厅会看到您的评价',
+      'reviewSentWhatsappHint': '评价已准备好，请在 WhatsApp 中点击发送',
+      'reviewFailed': '评价未保存，请稍后再试',
+      'reviewNotAvailable': '该餐厅暂不接受评价',
+      'reviewTooOften': '提交过于频繁，请稍候',
     },
     'ko': {
       'catalog': '메뉴',
@@ -399,6 +490,19 @@ class AppLocalizations {
       'searchStart': '메뉴 이름을 입력하세요',
       'nothingFound': '검색 결과가 없습니다',
       'found': '검색 결과',
+      // Отзыв
+      'leaveReview': '리뷰 남기기',
+      'reviewTitle': '리뷰',
+      'reviewRatingHint': '오늘 어떠셨나요?',
+      'reviewWaiter': '담당 직원 이름',
+      'reviewTable': '테이블 번호',
+      'reviewComment': '좋았던 점과 아쉬웠던 점',
+      'sendReview': '리뷰 보내기',
+      'reviewSentHint': '감사합니다! 카페가 리뷰를 확인합니다',
+      'reviewSentWhatsappHint': '리뷰가 준비되었습니다. WhatsApp에서 보내기를 누르세요',
+      'reviewFailed': '리뷰가 저장되지 않았습니다. 나중에 다시 시도해 주세요',
+      'reviewNotAvailable': '이 카페는 아직 리뷰를 받지 않습니다',
+      'reviewTooOften': '리뷰를 너무 자주 보냈습니다. 잠시 기다려 주세요',
     },
     'ja': {
       'catalog': 'メニュー',
@@ -447,6 +551,19 @@ class AppLocalizations {
       'searchStart': '料理名を入力してください',
       'nothingFound': '見つかりませんでした',
       'found': '件数',
+      // Отзыв
+      'leaveReview': 'レビューを書く',
+      'reviewTitle': 'レビュー',
+      'reviewRatingHint': 'いかがでしたか？',
+      'reviewWaiter': '担当スタッフの名前',
+      'reviewTable': 'テーブル番号',
+      'reviewComment': 'よかった点・気になった点',
+      'sendReview': 'レビューを送信',
+      'reviewSentHint': 'ありがとうございます。お店が確認します',
+      'reviewSentWhatsappHint': 'レビューができました。WhatsApp で送信してください',
+      'reviewFailed': 'レビューを保存できませんでした。後でお試しください',
+      'reviewNotAvailable': 'この店舗はまだレビューを受け付けていません',
+      'reviewTooOften': '送信が多すぎます。少しお待ちください',
     },
     'de': {
       'catalog': 'KATALOG',
@@ -495,6 +612,19 @@ class AppLocalizations {
       'searchStart': 'Namen eines Gerichts eingeben',
       'nothingFound': 'Nichts gefunden',
       'found': 'Gefunden',
+      // Отзыв
+      'leaveReview': 'Bewertung abgeben',
+      'reviewTitle': 'BEWERTUNG',
+      'reviewRatingHint': 'Wie war es bei uns?',
+      'reviewWaiter': 'Name der Bedienung',
+      'reviewTable': 'Tischnummer',
+      'reviewComment': 'Was hat gefallen, was nicht',
+      'sendReview': 'BEWERTUNG SENDEN',
+      'reviewSentHint': 'Danke! Das Café sieht Ihre Bewertung',
+      'reviewSentWhatsappHint': 'Bewertung ist fertig. Tippen Sie in WhatsApp auf Senden',
+      'reviewFailed': 'Bewertung wurde nicht gespeichert. Später versuchen',
+      'reviewNotAvailable': 'Dieses Café nimmt noch keine Bewertungen an',
+      'reviewTooOften': 'Zu viele Bewertungen hintereinander. Bitte warten Sie kurz',
     },
     'fr': {
       'catalog': 'CATALOGUE',
@@ -543,6 +673,19 @@ class AppLocalizations {
       'searchStart': 'Saisissez le nom d’un plat',
       'nothingFound': 'Aucun résultat',
       'found': 'Trouvé',
+      // Отзыв
+      'leaveReview': 'Laisser un avis',
+      'reviewTitle': 'AVIS',
+      'reviewRatingHint': 'Comment était-ce ?',
+      'reviewWaiter': 'Nom du serveur',
+      'reviewTable': 'Numéro de table',
+      'reviewComment': 'Ce qui vous a plu ou non',
+      'sendReview': 'ENVOYER L’AVIS',
+      'reviewSentHint': 'Merci ! Le café verra votre avis',
+      'reviewSentWhatsappHint': 'L’avis est prêt. Appuyez sur Envoyer dans WhatsApp',
+      'reviewFailed': 'L’avis n’a pas été enregistré. Réessayez plus tard',
+      'reviewNotAvailable': 'Ce café n’accepte pas encore les avis',
+      'reviewTooOften': 'Trop d’avis d’affilée. Patientez un instant',
     },
     'es': {
       'catalog': 'CATÁLOGO',
@@ -591,6 +734,19 @@ class AppLocalizations {
       'searchStart': 'Escriba el nombre de un plato',
       'nothingFound': 'No se encontró nada',
       'found': 'Encontrado',
+      // Отзыв
+      'leaveReview': 'Dejar una opinión',
+      'reviewTitle': 'OPINIÓN',
+      'reviewRatingHint': '¿Qué tal estuvo?',
+      'reviewWaiter': 'Nombre del camarero',
+      'reviewTable': 'Número de mesa',
+      'reviewComment': 'Qué le gustó y qué no',
+      'sendReview': 'ENVIAR OPINIÓN',
+      'reviewSentHint': '¡Gracias! El café verá su opinión',
+      'reviewSentWhatsappHint': 'La opinión está lista. Pulse Enviar en WhatsApp',
+      'reviewFailed': 'La opinión no se guardó. Inténtelo más tarde',
+      'reviewNotAvailable': 'Este café todavía no acepta opiniones',
+      'reviewTooOften': 'Demasiadas opiniones seguidas. Espere un momento',
     },
   };
 
@@ -653,6 +809,18 @@ class AppLocalizations {
   String get noDescription => get('noDescription');
   String get size => get('size');
   String get applyingTheme => get('applyingTheme');
+  String get leaveReview => get('leaveReview');
+  String get reviewTitle => get('reviewTitle');
+  String get reviewRatingHint => get('reviewRatingHint');
+  String get reviewWaiter => get('reviewWaiter');
+  String get reviewTable => get('reviewTable');
+  String get reviewComment => get('reviewComment');
+  String get sendReview => get('sendReview');
+  String get reviewSentHint => get('reviewSentHint');
+  String get reviewSentWhatsappHint => get('reviewSentWhatsappHint');
+  String get reviewFailed => get('reviewFailed');
+  String get reviewNotAvailable => get('reviewNotAvailable');
+  String get reviewTooOften => get('reviewTooOften');
 }
 
 class AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {
