@@ -331,12 +331,12 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     final branch = currentBranch.value;
     final sender = ReviewSender.forBranch(branch);
     if (!sender.canReview || branch == null) return const SizedBox.shrink();
-    // Отзыв одноразовый: оставил — и кнопки больше нет. Своего отзыва
-    // гость нигде не видит, перечитать и поправить его нельзя
+    // Своего отзыва гость нигде не видит — ни перечитать, ни поправить.
+    // А когда отзывы кончились, кнопка просто пропадает до завтра
     return ValueListenableBuilder<int>(
       valueListenable: reviewsLeft,
       builder: (context, _, _) {
-        if (reviewLeftFor(branch.id)) return const SizedBox.shrink();
+        if (reviewLimitReached(branch.id)) return const SizedBox.shrink();
         return TextButton.icon(
           onPressed: () {
             HapticFeedback.selectionClick();
