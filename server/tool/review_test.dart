@@ -437,6 +437,57 @@ Future<void> main() async {
       'reviews_enabled': true,
     });
 
+    // --- Внедрение SQL: текст гостя никогда не попадает в сам запрос ---
+    // Все значения уходят отдельными параметрами (`?`), поэтому кавычки и
+    // точка с запятой в имени официанта — это просто буквы
+    const drop = "'); drop table reviews; --";
+    const quotes = '" OR 1=1 --';
+    (status, body) = await post(
+      _review(waiter: drop, tableNo: quotes, comment: "О'Коннор; select 1"),
+    );
+    expect('отзыв с кавычками и «drop table» принят', status == 201, '$status $body');
+    final tricky = db
+        .select("select * from reviews where waiter = ?", [drop])
+        .first;
+    expect(
+      'текст сохранён буква в букву, ничего не выполнилось',
+      tricky['waiter'] == drop &&
+          tricky['table_no'] == quotes &&
+          tricky['comment'] == "О'Коннор; select 1",
+      tricky,
+    );
+    expect(
+      'таблица reviews на месте',
+      db
+              .select(
+                "select count(*) n from sqlite_master where name = 'reviews'",
+              )
+              .first['n'] ==
+          1,
+    );
+    expect(
+      'и таблица branches тоже',
+      db.select('select count(*) n from branches').first['n'] >= 3,
+    );
+    // Фильтр в админке — тоже параметр, а не кусок запроса
+    (code, _) = await admin(
+      'GET',
+      '/api/admin/reviews?branch_id=$_branchId&max_rating=1 or 1=1',
+      mine,
+    );
+    expect('внедрение в фильтр оценки — 400', code == 400, code);
+    (code, _) = await admin(
+      'GET',
+      "/api/admin/reviews?branch_id=$_branchId&before=' or '1'='1",
+      mine,
+    );
+    final afterInject = db.select('select count(*) n from reviews').first['n'];
+    expect(
+      'внедрение в курсор ничего не ломает',
+      code == 200 && afterInject > 0,
+      '$code $afterInject',
+    );
+
     // --- Отзывы живут 40 дней ---
     db.execute(
       "insert into reviews (id, branch_id, rating, comment, created_at) values "
