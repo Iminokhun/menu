@@ -381,7 +381,11 @@ class _CheckoutSheetState extends State<CheckoutSheet> {
       keyboardType: lines > 1 ? TextInputType.multiline : keyboard,
       textCapitalization: capitalization,
       minLines: lines,
-      maxLines: lines,
+      // Растёт, а не прокручивается внутри себя: иначе в настольном
+      // браузере поверх последних букв ложится полоса прокрутки, и
+      // отступом её не отодвинуть — он двигает и текст, и полосу.
+      // Прокручивается сама шторка, у неё по краям есть отбивка
+      maxLines: lines > 1 ? null : 1,
       maxLength: maxLength,
       // Счётчик под каждым полем только мешает — предел всё равно сработает
       buildCounter:

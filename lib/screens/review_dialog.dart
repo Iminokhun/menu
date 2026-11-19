@@ -229,7 +229,13 @@ class _ReviewDialogState extends State<ReviewDialog> {
       keyboardType: lines > 1 ? TextInputType.multiline : TextInputType.text,
       textCapitalization: TextCapitalization.sentences,
       minLines: lines,
-      maxLines: lines,
+      // Многострочное поле растёт, а не прокручивается внутри себя.
+      // Иначе в настольном браузере поверх последних букв ложится полоса
+      // прокрутки: она всегда прижата к краю текста, и отступом её не
+      // отодвинуть — отступ двигает и текст, и полосу. Прокручивается
+      // теперь сам диалог, а у него по краям есть отбивка, в которой
+      // полосе есть где встать
+      maxLines: lines > 1 ? null : 1,
       maxLength: maxLength,
       // Счётчик под каждым полем только мешает — предел всё равно сработает
       buildCounter:
