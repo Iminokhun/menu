@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -6,6 +7,9 @@ import '../../config/current_branch.dart';
 import '../../image_upload.dart';
 import '../../l10n/languages.dart';
 import '../../models/branch.dart';
+import '../../models/json_read.dart';
+import '../../open_link.dart';
+import '../../order/order_message.dart';
 import '../../widgets/qr_sticker.dart';
 
 /// Настройки филиала: название, слоган, телефон, логотип и ссылка QR.
@@ -28,6 +32,8 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
   final _mapUrlCtrl = TextEditingController();
   final _hoursCtrl = TextEditingController();
   final _slugCtrl = TextEditingController();
+  final _orderWaCtrl = TextEditingController();
+  final _deliveryPriceCtrl = TextEditingController();
   /// Ссылка QR, которая сейчас записана у филиала
   String _savedQrUrl = '';
   String _logoUrl = '';
@@ -84,6 +90,8 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
     _mapUrlCtrl.dispose();
     _hoursCtrl.dispose();
     _slugCtrl.dispose();
+    _orderWaCtrl.dispose();
+    _deliveryPriceCtrl.dispose();
     super.dispose();
   }
 
@@ -125,6 +133,8 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
         _mapUrlCtrl.text = (data['map_url'] as String?) ?? '';
         _hoursCtrl.text = (data['hours'] as String?) ?? '';
         _slugCtrl.text = (data['slug'] as String?) ?? '';
+        _orderWaCtrl.text = (data['order_whatsapp'] as String?) ?? '';
+        _deliveryPriceCtrl.text = _money(jsonDouble(data['delivery_price']));
         _logoUrl = (data['logo_url'] as String?) ?? '';
         _savedQrUrl = (data['qr_url'] as String?) ?? '';
         _languages = Branch.fromJson(data).languages;
@@ -162,6 +172,21 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
       _toast('Укажите адрес для ссылки — он нужен для QR-кода', isError: true);
       return;
     }
+    // Кривой номер лучше не отправлять вовсе: иначе сервер ответит отказом,
+    // а кафе решит, что поле просто не сохраняется
+    final orderWa = _orderWhatsapp;
+    if (orderWa == null) {
+      _toast(
+        'Проверьте номер WhatsApp: нужны цифры с кодом страны',
+        isError: true,
+      );
+      return;
+    }
+    final deliveryPrice = _deliveryPrice;
+    if (deliveryPrice == null) {
+      _toast('Стоимость доставки: введите число от 0', isError: true);
+      return;
+    }
 
     setState(() => _saving = true);
     try {
@@ -175,6 +200,8 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
         'hours': _hoursCtrl.text.trim(),
         'logo_url': _logoUrl,
         'qr_url': _qrLink ?? _savedQrUrl,
+        'order_whatsapp': orderWa,
+        'delivery_price': deliveryPrice,
       });
 
       // Сервер вернул обновлённую строку — обновляем текущий филиал, чтобы
@@ -734,6 +761,93 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
     );
   }
 
+  /// Куда уходят заказы гостей и сколько стоит доставка.
+  Widget _orderSettings() {
+    final digits = _orderWhatsapp;
+    final empty = _orderWaCtrl.text.trim().isEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _field(
+          _orderWaCtrl,
+          'WhatsApp для заказов',
+          icon: Icons.chat_outlined,
+          keyboard: TextInputType.phone,
+          onChanged: (_) => setState(() {}),
+          hint: 'Номер с кодом страны. Пусто — кнопки заказа на сайте нет',
+        ),
+        if (!empty) ...[
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  digits == null
+                      ? 'Проверьте номер: нужны цифры с кодом страны'
+                      : 'Сохранится как: $digits',
+                  style: TextStyle(
+                    color: digits == null ? Colors.orangeAccent : Colors.white38,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              // Самая дешёвая защита от худшего: кафе само убедится, что
+              // номер ведёт на нужный телефон, раньше, чем это выяснят гости
+              if (digits != null && digits.isNotEmpty && kIsWeb)
+                TextButton(
+                  onPressed: () =>
+                      openLink(waLink(digits, 'Проверка заказа с сайта')),
+                  child: const Text('Проверить'),
+                ),
+            ],
+          ),
+        ],
+        const SizedBox(height: 12),
+        _field(
+          _deliveryPriceCtrl,
+          'Стоимость доставки',
+          icon: Icons.delivery_dining_outlined,
+          keyboard: TextInputType.number,
+          hint: 'Прибавится к заказу с доставкой. 0 или пусто — бесплатно',
+        ),
+        const SizedBox(height: 10),
+        const Text(
+          'Гость отправляет сообщение сам, поэтому сверяйтесь с разделом '
+          '«Заказы» — там видно всё, что оформили на сайте.',
+          style: TextStyle(color: Colors.white38, fontSize: 12),
+        ),
+      ],
+    );
+  }
+
+  /// Номер WhatsApp в том виде, в каком он сохранится. `null` — номер
+  /// не распознан; пустая строка — заказы выключены.
+  ///
+  /// Код страны у номера с ведущим нулём подставляет сервер
+  /// (`DEFAULT_COUNTRY_CODE`), поэтому здесь он тоже 996: админку открывают
+  /// в Кыргызстане, а окончательную проверку всё равно делает сервер.
+  String? get _orderWhatsapp =>
+      normalizeWaPhone(_orderWaCtrl.text, defaultCountryCode: '996');
+
+  /// Стоимость доставки. `null` — введено не число.
+  ///
+  /// Запятая обязательна к разбору: на русской раскладке набирают «150,00»,
+  /// а `double.tryParse` на такой строке молча вернул бы null и поле
+  /// сохранилось бы пустым.
+  double? get _deliveryPrice {
+    final t = _deliveryPriceCtrl.text.trim().replaceAll(',', '.');
+    if (t.isEmpty) return 0;
+    final v = double.tryParse(t);
+    if (v == null || v < 0 || !v.isFinite) return null;
+    return v;
+  }
+
+  /// Деньги в поле ввода: 0 — пусто, 150.0 — «150». Кафе не набирало «.0»
+  static String _money(double v) {
+    if (v == 0) return '';
+    return v == v.roundToDouble() ? v.round().toString() : v.toString();
+  }
+
   /// Адрес в том виде, в каком он сохранится: «Центр 2» → `centr-2`.
   /// Пробел, `&` или `/` в адресе сломали бы ссылку QR-кода.
   String get _cleanSlug => _slugify(_slugCtrl.text);
@@ -1022,6 +1136,11 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
                           style: const TextStyle(color: Colors.orangeAccent, fontSize: 12),
                         ),
                       ],
+                      const SizedBox(height: 30),
+
+                      _sectionLabel('ЗАКАЗЫ С САЙТА'),
+                      const SizedBox(height: 12),
+                      _orderSettings(),
                       const SizedBox(height: 30),
 
                       // Адрес и карта показываются гостю в каталоге кафе

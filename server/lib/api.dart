@@ -12,6 +12,7 @@ import 'db.dart';
 import 'glb.dart';
 import 'languages.dart';
 import 'media.dart';
+import 'order.dart';
 import 'security.dart';
 import 'seo.dart' as seo;
 import 'slug.dart';
@@ -38,9 +39,15 @@ const _branchFields = {
   'is_active',
   'sort_order',
   'languages',
+  'order_whatsapp',
+  'delivery_price',
   ...styleColumns,
   ...locationColumns,
 };
+
+/// У заказа кафе меняет только отметку «готово». Состав, суммы и контакты
+/// гостя — запись о том, что было, её не правят
+const _orderFields = {'status'};
 const _categoryFields = {
   'parent_id',
   'name',
@@ -63,7 +70,7 @@ const _productFields = {
 };
 
 /// Поля, которые в базе лежат JSON-текстом, а наружу отдаются как есть.
-const _jsonFields = {'portions', 'languages', 'i18n'};
+const _jsonFields = {'portions', 'languages', 'i18n', 'items'};
 
 /// Поля с адресами файлов: в базе хранится путь `/uploads/...`,
 /// наружу отдаётся полный адрес. Так база не привязана к домену сервера.
@@ -112,8 +119,25 @@ const _maxBodyBytes = 1024 * 1024;
 
 /// Длина текстовых полей. Без предела в название можно положить мегабайты —
 /// меню у гостей грузилось бы минутами
-const _maxText = {'name': 200, 'slogan': 200, 'phone': 50, 'description': 2000};
+const _maxText = {
+  'name': 200,
+  'slogan': 200,
+  'phone': 50,
+  'description': 2000,
+  'guest_name': 60,
+  'guest_phone': 30,
+  'comment': 300,
+  'address': _maxLocationText,
+};
 const _maxTextDefault = 500;
+
+/// Сколько позиций и сколько одинаковых блюд допустимо в одном заказе.
+/// Выше — это не обед, а попытка раздуть запись и сообщение в WhatsApp
+const _maxOrderItems = 100;
+const _maxOrderQty = 99;
+
+/// Код заказа: его придумывает клиент, сервер только проверяет вид
+final _orderCode = RegExp(r'^[A-Z0-9]{0,8}$');
 
 /// Управляющие символы и «невидимые» знаки направления текста: ими можно
 /// спрятать или перевернуть часть названия (подмена текста). Перевод
@@ -148,15 +172,36 @@ class Api {
   /// подходит к концу (`BILLING_CONTACT`, например телефон или WhatsApp)
   final String billingContact;
 
+  /// Код страны, которым дополняется номер WhatsApp, начатый с нуля
+  /// (`0555112233` → `996555112233`). Пусто — такие номера не принимаются:
+  /// угаданный неверно код страны увёл бы все заказы кафе на чужой телефон
+  final String defaultCountryCode;
+
   Api(
     this.db, {
     required this.uploadsDir,
     this.publicUrl,
     this.menuUrl,
     this.billingContact = '',
+    this.defaultCountryCode = '',
     this.uploadQuotaBytes = 2 * 1024 * 1024 * 1024,
     UploadLimiter? uploadLimiter,
-  }) : _uploads = uploadLimiter ?? UploadLimiter();
+    SlidingWindowLimiter? orderIpLimiter,
+    SlidingWindowLimiter? orderBranchLimiter,
+  }) : _uploads = uploadLimiter ?? UploadLimiter(),
+       _orderIp =
+           orderIpLimiter ??
+           SlidingWindowLimiter(max: 5, window: const Duration(minutes: 5)),
+       _orderBranch =
+           orderBranchLimiter ??
+           SlidingWindowLimiter(max: 60, window: const Duration(minutes: 10));
+
+  /// Сколько заказов подряд принимается с одного адреса
+  final SlidingWindowLimiter _orderIp;
+
+  /// И сколько — одним филиалом: это предел и на наплыв с разных адресов,
+  /// и на рост таблицы
+  final SlidingWindowLimiter _orderBranch;
 
   /// Сколько места на диске может занять одно кафе (фото и 3D-модели)
   final int uploadQuotaBytes;
@@ -177,6 +222,11 @@ class Api {
   }
 
   static const _unpaidGuest = 'Меню временно недоступно';
+  static const _tooManyOrders =
+      'Слишком много заказов подряд. Подождите немного';
+
+  /// Значение поля запроса как строка; не строка — пусто.
+  static String _str(Object? v) => v is String ? v : '';
 
   /// Неудачные входы по логину: защита от подбора пароля.
   final _failedLogins = <String, List<DateTime>>{};
@@ -195,6 +245,7 @@ class Api {
     r.get('/api/public/branch/<slug>', _publicBranch);
     r.get('/api/public/menu/<branchId>', _publicMenu);
     r.get('/api/public/cafes', _publicCafes);
+    r.post('/api/public/orders', _createOrder);
 
     // ---------- Для поисковиков (seo.dart) ----------
     r.get('/kafe', _seoCatalog);
@@ -225,6 +276,9 @@ class Api {
     r.patch('/api/admin/products/<id>', _updateProduct);
     r.delete('/api/admin/products/<id>', _deleteProduct);
     r.post('/api/admin/products/copy', _copyProducts);
+
+    r.get('/api/admin/orders', _listOrders);
+    r.patch('/api/admin/orders/<id>', _updateOrder);
 
     r.post('/api/admin/upload', _upload);
 
@@ -567,6 +621,28 @@ class Api {
             'Ссылка на карту должна начинаться с https://',
           );
         }
+      case 'order_whatsapp':
+        if (v is String) {
+          final digits = normalizeWaPhone(
+            v,
+            defaultCountryCode: defaultCountryCode,
+          );
+          if (digits != null) return digits;
+          throw ApiError(
+            400,
+            'Номер WhatsApp: цифры с кодом страны, например 996555112233',
+          );
+        }
+      case 'delivery_price':
+        // Потолок — чтобы съехавшая запятая не превратилась в счёт на
+        // миллион, который гость увидит у себя в WhatsApp
+        if (v is num && v.isFinite && v >= 0 && v <= 100000) {
+          return v.toDouble();
+        }
+        throw ApiError(400, 'Стоимость доставки: число от 0');
+      case 'status':
+        if (v == 'new' || v == 'done') return v;
+        throw ApiError(400, 'Неизвестная отметка заказа');
       case 'i18n':
         return _validI18n(v);
       case 'portions':
@@ -811,6 +887,221 @@ class Api {
       'categories': _outAll(req, cats),
       'products': _outAll(req, prods),
     });
+  }
+
+  /// Заказ гостя с сайта. Открыт всем: гость никуда не входит.
+  ///
+  /// Клиент не присылает **никаких денег** — ни цен блюд, ни стоимости
+  /// доставки, ни итога. Всё это сервер считает сам, по своей же базе:
+  /// запрос публичный, и доверие к присланной сумме позволило бы любому
+  /// записать кафе «шашлык за 1 сом». К тому же меню у гостя бывает из
+  /// кэша (menu_store.dart) и несёт прошлонедельные цены.
+  ///
+  /// Текст сообщения собирает клиент, и гость может его поправить перед
+  /// отправкой. Сообщение — уведомление; что было на самом деле, записано
+  /// здесь, и кафе смотрит в список заказов.
+  Future<Response> _createOrder(Request req) async {
+    final body = await _body(req);
+    // Пределы — до любой работы с базой
+    if (!_orderIp.tryAcquire(clientIp(req))) {
+      throw ApiError(429, _tooManyOrders, code: 'too_often');
+    }
+    final branchId = body['branch_id'];
+    if (branchId is! String || branchId.isEmpty) {
+      throw ApiError(400, 'Не указан филиал');
+    }
+    if (!_orderBranch.tryAcquire(branchId)) {
+      throw ApiError(429, _tooManyOrders, code: 'too_often');
+    }
+
+    final rows = db.select(
+      '''
+      select b.* from branches b join cafes c on c.id = b.cafe_id
+       where b.id = ? and b.is_active = 1 and c.is_active = 1''',
+      [branchId],
+    );
+    if (rows.isEmpty) throw ApiError(404, 'Филиал не найден');
+    final branch = rows.first;
+    if (_access(branch['cafe_id'] as String).access == Access.expired) {
+      throw ApiError(403, _unpaidGuest, code: 'unpaid');
+    }
+    // Заказы включает само кафе, вписав номер WhatsApp. Без этой проверки
+    // список заказов можно было бы засыпать тому, кто их не принимает и на
+    // этот экран не заходит
+    if (_str(branch['order_whatsapp']).isEmpty) {
+      throw ApiError(
+        403,
+        'Заказы в этом кафе пока не принимаются',
+        code: 'orders_off',
+      );
+    }
+
+    final type = body['order_type'];
+    if (type != 'delivery' && type != 'pickup') {
+      throw ApiError(400, 'Неизвестный способ получения заказа');
+    }
+    final isDelivery = type == 'delivery';
+
+    final name = _text('guest_name', _str(body['name']));
+    if (name.isEmpty) throw ApiError(400, 'Укажите имя');
+    final phone = cleanGuestPhone(_str(body['phone']));
+    if (phone == null) throw ApiError(400, 'Укажите телефон');
+    // У самовывоза адреса нет, что бы ни прислал клиент
+    final address = isDelivery ? _text('address', _str(body['address'])) : '';
+    if (isDelivery && address.isEmpty) {
+      throw ApiError(400, 'Укажите адрес доставки');
+    }
+    final comment = _text('comment', _str(body['comment']));
+    final lang = _str(body['lang']);
+    if (lang.isNotEmpty && !menuLanguages.contains(lang)) {
+      throw ApiError(400, 'Неизвестный язык');
+    }
+    final code = _str(body['code']).toUpperCase();
+    if (!_orderCode.hasMatch(code)) {
+      throw ApiError(400, 'Неверный код заказа');
+    }
+
+    // Повтор: двойное нажатие или переотправка с клиента. Возвращаем тот же
+    // заказ, а не заводим второй — иначе на кухню уйдут два одинаковых
+    if (code.isNotEmpty) {
+      final same = db.select(
+        '''
+        select * from orders
+         where branch_id = ? and code = ?
+           and created_at > datetime('now', '-10 minutes')
+         order by created_at desc limit 1''',
+        [branchId, code],
+      );
+      if (same.isNotEmpty) return _json(_orderReceipt(same.first));
+    }
+
+    final rawItems = body['items'];
+    if (rawItems is! List || rawItems.isEmpty) {
+      throw ApiError(400, 'Заказ пустой');
+    }
+    if (rawItems.length > _maxOrderItems) {
+      throw ApiError(400, 'В заказе не больше $_maxOrderItems позиций');
+    }
+    final menu = <String, Row>{
+      for (final p in db.select(
+        'select id, name, price, portions from products '
+        'where branch_id = ? and is_visible = 1',
+        [branchId],
+      ))
+        p['id'] as String: p,
+    };
+
+    final items = <Map<String, Object?>>[];
+    var itemsTotal = 0.0;
+    for (final raw in rawItems) {
+      if (raw is! Map) throw ApiError(400, 'Неверная позиция заказа');
+      final id = _str(raw['product_id']);
+      final qty = raw['qty'];
+      if (id.isEmpty || qty is! int || qty < 1 || qty > _maxOrderQty) {
+        throw ApiError(400, 'Неверная позиция заказа');
+      }
+      final portion = _text('name', _str(raw['portion']));
+      final product = menu[id];
+      if (product == null) {
+        // Блюдо исчезло из меню, пока гость собирал заказ. Отказать нельзя:
+        // ссылка в WhatsApp к этому моменту уже открыта, и отказ сообщение
+        // не отзовёт — кафе получило бы заказ, которого нет в списке. Строка
+        // остаётся, но с ценой 0 и пометкой: пусть кафе перезвонит, а не
+        // привезёт меньше, чем просили
+        items.add({
+          'product_id': id,
+          'name': _text('name', _str(raw['name'])),
+          'portion': portion,
+          'price': 0,
+          'qty': qty,
+          'sum': 0,
+          'missing': true,
+        });
+        continue;
+      }
+      final price = _portionPrice(product, portion);
+      final sum = price * qty;
+      itemsTotal += sum;
+      items.add({
+        'product_id': id,
+        'name': product['name'] as String,
+        'portion': portion,
+        'price': price,
+        'qty': qty,
+        'sum': sum,
+      });
+    }
+
+    final deliveryTotal = isDelivery
+        ? ((branch['delivery_price'] as num?)?.toDouble() ?? 0)
+        : 0.0;
+    final id = newId();
+    try {
+      _insert('orders', {
+        'id': id,
+        'branch_id': branchId,
+        'code': code,
+        'order_type': type,
+        'guest_name': name,
+        'guest_phone': phone,
+        'address': address,
+        'comment': comment,
+        'lang': lang,
+        'items': jsonEncode(items),
+        'items_total': itemsTotal,
+        'delivery_total': deliveryTotal,
+        'total': itemsTotal + deliveryTotal,
+      });
+    } on SqliteException catch (e) {
+      _sqlError(e);
+    }
+    // Ответ собирается из сохранённой строки — тем же кодом, что и ответ на
+    // повтор выше, чтобы они не разошлись
+    final saved = db.select('select * from orders where id = ?', [id]).first;
+    return _json(_orderReceipt(saved), status: 201);
+  }
+
+  /// Цена порции по её названию; нет такой — цена блюда целиком.
+  double _portionPrice(Row product, String portion) {
+    final base = (product['price'] as num?)?.toDouble() ?? 0;
+    if (portion.isEmpty) return base;
+    try {
+      final list = jsonDecode(_str(product['portions']));
+      if (list is List) {
+        for (final p in list) {
+          if (p is Map && p['name'] == portion && p['price'] is num) {
+            return (p['price'] as num).toDouble();
+          }
+        }
+      }
+    } catch (_) {
+      // Испорченный JSON порций не должен ронять заказ
+    }
+    return base;
+  }
+
+  /// Что возвращается гостю после заказа: только суммы и сколько блюд уже
+  /// пропало из меню. Личные данные обратно не отдаём — их незачем
+  /// пересылать ещё раз
+  Map<String, Object?> _orderReceipt(Row row) {
+    var missing = 0;
+    try {
+      final items = jsonDecode(_str(row['items']));
+      if (items is List) {
+        missing = items.where((i) => i is Map && i['missing'] == true).length;
+      }
+    } catch (_) {
+      // см. _portionPrice
+    }
+    return {
+      'id': row['id'],
+      'code': row['code'],
+      'items_total': row['items_total'],
+      'delivery_total': row['delivery_total'],
+      'total': row['total'],
+      'missing': missing,
+      'created_at': row['created_at'],
+    };
   }
 
   // ======================================================================
@@ -1292,6 +1583,57 @@ class Api {
       'skipped': skipped,
       'categories_created': created,
     });
+  }
+
+  // ======================================================================
+  //  Заказы (кафе)
+  // ======================================================================
+
+  /// Заказы филиала, новые сверху. Личные данные гостя видит только своё
+  /// кафе: публичного чтения заказов нет и быть не должно.
+  Response _listOrders(Request req) {
+    final u = _cafeAdmin(req);
+    final q = req.url.queryParameters;
+    final branch = _ownBranch(u, q['branch_id']);
+    final status = q['status'];
+    if (status != null && status != 'new' && status != 'done') {
+      throw ApiError(400, 'Неизвестная отметка заказа');
+    }
+    final before = q['before'];
+    final where = StringBuffer('branch_id = ?');
+    final args = <Object?>[branch['id']];
+    if (status != null) {
+      where.write(' and status = ?');
+      args.add(status);
+    }
+    if (before != null && before.isNotEmpty) {
+      where.write(' and created_at < ?');
+      args.add(before);
+    }
+    // Предел обязателен: без него экран кафе с годовой историей заказов
+    // грузился бы минутами
+    args.add((int.tryParse(q['limit'] ?? '') ?? 50).clamp(1, 200));
+    return _json(
+      _outAll(
+        req,
+        db.select(
+          'select * from orders where $where order by created_at desc limit ?',
+          args,
+        ),
+      ),
+    );
+  }
+
+  /// Отметка «готово» и обратно. Состав и суммы заказа не меняются: это
+  /// запись о том, что было.
+  Future<Response> _updateOrder(Request req, String id) async {
+    final u = _cafeAdmin(req);
+    _ownRow(u, 'orders', id);
+    final data = _pick(req, await _body(req), _orderFields);
+    _update('orders', id, data);
+    return _json(
+      _out(req, db.select('select * from orders where id = ?', [id]).first),
+    );
   }
 
   /// Загрузка картинки или 3D-модели: тело запроса — сами байты, расширение

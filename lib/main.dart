@@ -60,6 +60,8 @@ void _syncBranch() {
         cur.mapUrl == b.mapUrl &&
         cur.hours == b.hours &&
         cur.qrUrl == b.qrUrl &&
+        cur.orderWhatsapp == b.orderWhatsapp &&
+        cur.deliveryPrice == b.deliveryPrice &&
         cur.style == b.style &&
         listEquals(cur.languages, b.languages);
     if (!same) currentBranch.value = b;

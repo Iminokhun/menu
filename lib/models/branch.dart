@@ -36,6 +36,18 @@ class Branch {
 
   String get mainLanguage => languages.first;
 
+  /// Номер WhatsApp, куда уходят заказы с сайта: только цифры с кодом
+  /// страны, `996555112233`. Пусто — филиал заказы не принимает.
+  final String orderWhatsapp;
+
+  /// Стоимость доставки. 0 — бесплатно.
+  final double deliveryPrice;
+
+  /// Можно ли вообще заказать в этом филиале. Номер проверяется ещё раз
+  /// здесь: в сохранённой копии меню от старой версии его может не быть
+  /// вовсе или он может быть испорчен — тогда ссылка вела бы в никуда.
+  bool get canOrderByWhatsapp => RegExp(r'^\d{10,15}$').hasMatch(orderWhatsapp);
+
   const Branch({
     required this.id,
     required this.slug,
@@ -50,6 +62,8 @@ class Branch {
     this.sortOrder = 0,
     this.style = const BranchStyle(),
     this.languages = const ['ru'],
+    this.orderWhatsapp = '',
+    this.deliveryPrice = 0,
   });
 
   /// Подстановки на случай пустых полей живут здесь, а не на экране:
@@ -71,6 +85,8 @@ class Branch {
       sortOrder: jsonInt(json['sort_order']),
       style: BranchStyle.fromJson(json),
       languages: _languages(json['languages']),
+      orderWhatsapp: (json['order_whatsapp'] as String?) ?? '',
+      deliveryPrice: jsonDouble(json['delivery_price']),
     );
   }
 

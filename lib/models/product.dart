@@ -103,6 +103,16 @@ class CartItem {
 // Глобальная корзина
 final ValueNotifier<List<CartItem>> globalCart = ValueNotifier([]);
 
+/// Сумма корзины и число блюд в ней.
+///
+/// Считаются в одном месте нарочно: эти два числа показывает кнопка корзины,
+/// сама корзина, экран оформления и сообщение в WhatsApp. Четыре копии
+/// одной денежной арифметики — это ровно то, как они однажды разойдутся.
+double cartTotal(List<CartItem> cart) =>
+    cart.fold(0, (sum, i) => sum + i.price * i.quantity);
+
+int cartCount(List<CartItem> cart) => cart.fold(0, (sum, i) => sum + i.quantity);
+
 /// Добавить блюдо в корзину — из меню и из поиска одинаково.
 /// Та же порция того же блюда не дублируется, а прибавляется к количеству.
 void addToCart(Product p, Portion? portion, int quantity) {

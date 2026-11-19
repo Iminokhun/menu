@@ -4,6 +4,7 @@ import '../../config/current_branch.dart';
 import '../../database.dart';
 import '../../models/branch.dart';
 import 'admin_categories_screen.dart';
+import 'admin_orders_screen.dart';
 import 'admin_products_screen.dart';
 import 'admin_shop_screen.dart';
 import 'admin_style_screen.dart';
@@ -165,37 +166,46 @@ class _AdminShellState extends State<AdminShell> {
                 Divider(color: Colors.white.withValues(alpha: 0.1)),
                 const SizedBox(height: 10),
 
-                // Навигационные кнопки
+                // Навигационные кнопки. «Заказы» первыми: в них заходят
+                // десятки раз в день, и только там видно заказ целиком
+                _NavItem(
+                  icon: Icons.receipt_long_outlined,
+                  activeIcon: Icons.receipt_long,
+                  label: 'Заказы',
+                  isActive: _selectedIndex == 0,
+                  onTap: () => setState(() => _selectedIndex = 0),
+                ),
+                const SizedBox(height: 6),
                 _NavItem(
                   icon: Icons.category_outlined,
                   activeIcon: Icons.category,
                   label: 'Категории',
-                  isActive: _selectedIndex == 0,
-                  onTap: () => setState(() => _selectedIndex = 0),
+                  isActive: _selectedIndex == 1,
+                  onTap: () => setState(() => _selectedIndex = 1),
                 ),
                 const SizedBox(height: 6),
                 _NavItem(
                   icon: Icons.fastfood_outlined,
                   activeIcon: Icons.fastfood,
                   label: 'Товары',
-                  isActive: _selectedIndex == 1,
-                  onTap: () => setState(() => _selectedIndex = 1),
+                  isActive: _selectedIndex == 2,
+                  onTap: () => setState(() => _selectedIndex = 2),
                 ),
                 const SizedBox(height: 6),
                 _NavItem(
                   icon: Icons.store_outlined,
                   activeIcon: Icons.store,
                   label: 'Филиал',
-                  isActive: _selectedIndex == 2,
-                  onTap: () => setState(() => _selectedIndex = 2),
+                  isActive: _selectedIndex == 3,
+                  onTap: () => setState(() => _selectedIndex = 3),
                 ),
                 const SizedBox(height: 6),
                 _NavItem(
                   icon: Icons.palette_outlined,
                   activeIcon: Icons.palette,
                   label: 'Оформление',
-                  isActive: _selectedIndex == 3,
-                  onTap: () => setState(() => _selectedIndex = 3),
+                  isActive: _selectedIndex == 4,
+                  onTap: () => setState(() => _selectedIndex = 4),
                 ),
 
                 const Spacer(),
@@ -240,11 +250,15 @@ class _AdminShellState extends State<AdminShell> {
                 Expanded(
                   child: IndexedStack(
                     index: _selectedIndex,
-                    children: const [
-                      AdminCategoriesScreen(),
-                      AdminProductsScreen(),
-                      AdminShopScreen(),
-                      AdminStyleScreen(),
+                    children: [
+                      // IndexedStack держит все экраны живыми, поэтому
+                      // «Заказы» должны знать, открыты ли они: иначе опрос
+                      // сервера шёл бы и с других вкладок
+                      AdminOrdersScreen(active: _selectedIndex == 0),
+                      const AdminCategoriesScreen(),
+                      const AdminProductsScreen(),
+                      const AdminShopScreen(),
+                      const AdminStyleScreen(),
                     ],
                   ),
                 ),

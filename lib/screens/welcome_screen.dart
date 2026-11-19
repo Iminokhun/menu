@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../widgets/auth_image.dart';
+import '../widgets/cart_fab.dart';
 import '../widgets/fit_words_text.dart';
 import '../widgets/motion.dart';
 import '../widgets/theme_background.dart';
@@ -217,6 +218,16 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
         return Scaffold(
           backgroundColor: config.bg,
           resizeToAvoidBottomInset: false,
+
+          // Корзина живёт и здесь: гость набирает блюда в одной категории,
+          // возвращается выбрать вторую — и без этой кнопки его заказ
+          // выглядел бы пропавшим
+          floatingActionButtonLocation:
+              FloatingActionButtonLocation.centerFloat,
+          floatingActionButton: CartFab(
+            onPressed: () => showCartSheet(context),
+          ),
+
           body: Stack(
             children: [
               Positioned.fill(child: ThemeBackground(config: config)),

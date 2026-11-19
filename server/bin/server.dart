@@ -33,6 +33,10 @@ import 'package:shelf_static/shelf_static.dart';
 ///   UPLOAD_QUOTA_MB  место на диске для файлов одного кафе (2048)
 ///   BILLING_CONTACT  кому и как платить за меню: телефон, WhatsApp —
 ///               кафе видит это в админке, когда срок подходит к концу
+///   DEFAULT_COUNTRY_CODE  код страны для номеров WhatsApp, набранных с
+///               нуля: 996 превращает 0555112233 в 996555112233. Пусто —
+///               такие номера не принимаются вовсе: неверно угаданный код
+///               увёл бы все заказы кафе на чужой телефон
 ///   SUPER_WEB_DIR  папка собранной главной админки (super_admin/build/web),
 ///               она открывается по адресу /menu-kg/
 Future<void> main(List<String> args) async {
@@ -90,6 +94,9 @@ Future<void> main(List<String> args) async {
     publicUrl: publicUrl,
     menuUrl: menuUrl,
     billingContact: (env['BILLING_CONTACT'] ?? '').trim(),
+    defaultCountryCode: (env['DEFAULT_COUNTRY_CODE'] ?? '')
+        .trim()
+        .replaceAll(RegExp(r'\D'), ''),
     uploadQuotaBytes: _quota(env['UPLOAD_QUOTA_MB']) * 1024 * 1024,
   );
 

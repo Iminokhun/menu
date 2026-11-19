@@ -3,8 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../config/current_branch.dart';
 import '../menu_store.dart';
 import '../models/product.dart';
+import '../order/order_delivery.dart';
+import '../widgets/cart_fab.dart';
+import 'checkout_sheet.dart';
 import '../theme/theme_config.dart';
 import '../theme/current_theme.dart';
 import '../widgets/motion.dart';
@@ -15,6 +19,38 @@ import '../l10n/app_localizations.dart';
 import '../l10n/translation_service.dart';
 import '../widgets/lang_switcher.dart';
 import '../responsive.dart';
+
+/// Открыть корзину поверх текущего экрана.
+///
+/// Функция, а не метод экрана: корзина нужна отовсюду, где гость может
+/// оказаться с набранными блюдами, — и в меню, и на выборе категорий, и
+/// после поиска. Экран, вернувший гостя назад, не должен прятать его заказ.
+void showCartSheet(BuildContext context) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (ctx) => _CartSheet(onCheckout: () => showCheckoutSheet(context)),
+  );
+}
+
+/// Оформление — отдельной шторкой поверх закрытой корзины.
+///
+/// Открывается от контекста экрана, а не корзины: ту к этому моменту уже
+/// закрыли, и её контекст больше ничего не покажет.
+void showCheckoutSheet(BuildContext context) {
+  final branch = currentBranch.value;
+  if (branch == null) return;
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (ctx) => CheckoutSheet(
+      branch: branch,
+      delivery: OrderDelivery.forBranch(branch),
+    ),
+  );
+}
 
 class MenuScreen extends StatefulWidget {
   final String? initialCategoryId;
@@ -135,19 +171,18 @@ class _MenuScreenState extends State<MenuScreen> {
   }
 
 
-  void _openSearch() {
+  Future<void> _openSearch() async {
     HapticFeedback.selectionClick();
-    Navigator.push(context, MaterialPageRoute(builder: (_) => const SearchScreen()));
+    // Поиск возвращает true, если гость нажал там кнопку корзины: сама
+    // корзина живёт здесь
+    final toCart = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => const SearchScreen()),
+    );
+    if (toCart == true && mounted) _openCart();
   }
 
-  void _openCart() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => const _CartSheet(),
-    );
-  }
+  void _openCart() => showCartSheet(context);
 
   @override
   Widget build(BuildContext context) {
@@ -161,49 +196,7 @@ class _MenuScreenState extends State<MenuScreen> {
           // === ПЛАВАЮЩАЯ КНОПКА КОРЗИНЫ ===
           floatingActionButtonLocation:
               FloatingActionButtonLocation.centerFloat,
-          floatingActionButton: ValueListenableBuilder<List<CartItem>>(
-            valueListenable: globalCart,
-            builder: (context, cartItems, child) {
-              if (cartItems.isEmpty) return const SizedBox.shrink();
-
-              double total = cartItems.fold(
-                0,
-                (sum, item) => sum + (item.price * item.quantity),
-              );
-              int count = cartItems.fold(0, (sum, item) => sum + item.quantity);
-
-              return FloatingActionButton.extended(
-                heroTag: 'fab_cart',
-                onPressed: _openCart,
-                backgroundColor: config.accent,
-                foregroundColor: config.onAccent,
-                elevation: 10,
-                icon: const Icon(Icons.shopping_basket),
-                label: Builder(builder: (ctx) {
-                  final l = AppLocalizations.of(ctx);
-                  return Row(
-                    children: [
-                      Text(
-                        "$count ${l.pcs} | ",
-                        style: const TextStyle(
-                          fontWeight: FontWeight.normal,
-                          fontSize: 16,
-                        ),
-                      ),
-                      Text(
-                        "${total.toInt()} ${l.som}",
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 18,
-                          fontFeatures: [FontFeature.tabularFigures()],
-                        ),
-                      ),
-                    ],
-                  );
-                }),
-              );
-            },
-          ),
+          floatingActionButton: CartFab(onPressed: _openCart),
 
           body: Stack(
             children: [
@@ -582,7 +575,11 @@ class _SubCategoryChip extends StatelessWidget {
 
 // === ШТОРКА КОРЗИНЫ ===
 class _CartSheet extends StatelessWidget {
-  const _CartSheet();
+  /// Открыть оформление. Корзина сначала закрывается, поэтому вызывается
+  /// уже из экрана меню, а не отсюда
+  final VoidCallback onCheckout;
+
+  const _CartSheet({required this.onCheckout});
 
   void _removeFromCart(CartItem item) {
     final current = globalCart.value;
@@ -605,10 +602,7 @@ class _CartSheet extends StatelessWidget {
     return ValueListenableBuilder<List<CartItem>>(
       valueListenable: globalCart,
       builder: (context, cart, child) {
-        double total = cart.fold(
-          0,
-          (sum, item) => sum + (item.price * item.quantity),
-        );
+        final total = cartTotal(cart);
 
         return ClipRRect(
           borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
@@ -800,34 +794,39 @@ class _CartSheet extends StatelessWidget {
                               ),
                             ],
                           ),
-                          const SizedBox(height: 20),
-                          SizedBox(
-                            width: double.infinity,
-                            height: 60,
-                            child: ElevatedButton(
-                              onPressed: null, // НЕАКТИВНАЯ КНОПКА
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: config.accent,
-                                disabledBackgroundColor: config.text.withValues(
-                                  alpha: 0.2,
+                          // Кнопки нет вовсе, если филиал не принимает
+                          // заказы или это не браузер: кнопка, которая
+                          // ничего не делает, выглядит сломанной
+                          if (OrderDelivery.forBranch(
+                            currentBranch.value,
+                          ).canOrder) ...[
+                            const SizedBox(height: 20),
+                            SizedBox(
+                              width: double.infinity,
+                              height: 60,
+                              child: ElevatedButton(
+                                onPressed: () {
+                                  Navigator.pop(context);
+                                  onCheckout();
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: config.accent,
+                                  foregroundColor: config.onAccent,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(15),
+                                  ),
                                 ),
-                                disabledForegroundColor: config.text.withValues(
-                                  alpha: 0.5,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(15),
-                                ),
-                              ),
-                              child: Text(
-                                l.placeOrder,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 18,
-                                  letterSpacing: 1.5,
+                                child: Text(
+                                  l.placeOrder,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 18,
+                                    letterSpacing: 1.5,
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
+                          ],
                           const SizedBox(height: 10),
                           TextButton(
                             onPressed: _clearCart,

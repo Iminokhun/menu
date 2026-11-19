@@ -202,6 +202,33 @@ void main() {
               .first['n'] ==
           2,
     );
+    // Заказы с сайта: таблица создаётся сама (create table if not exists),
+    // а две колонки филиала надо было досоздать
+    expect(
+      'таблица orders появилась',
+      db
+              .select(
+                "select count(*) n from sqlite_master where name = 'orders'",
+              )
+              .first['n'] ==
+          1,
+    );
+    final orderCols = db
+        .select('pragma table_info(branches)')
+        .map((r) => r['name'])
+        .toSet();
+    expect(
+      'у филиала появились order_whatsapp и delivery_price',
+      orderCols.contains('order_whatsapp') &&
+          orderCols.contains('delivery_price'),
+      orderCols,
+    );
+    final branchRow = db.select('select * from branches limit 1').first;
+    expect(
+      'у старых филиалов заказы выключены, доставка 0',
+      branchRow['order_whatsapp'] == '' && branchRow['delivery_price'] == 0,
+      branchRow,
+    );
     db.close();
 
     // Повторный запуск ничего не ломает

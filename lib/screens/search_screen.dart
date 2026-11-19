@@ -8,6 +8,7 @@ import '../responsive.dart';
 import '../search.dart';
 import '../theme/current_theme.dart';
 import '../theme/theme_config.dart';
+import '../widgets/cart_fab.dart';
 import '../widgets/motion.dart';
 import '../widgets/product_card.dart';
 
@@ -53,6 +54,13 @@ class _SearchScreenState extends State<SearchScreen> {
 
     return Scaffold(
       backgroundColor: config.bg,
+      // Корзину видно и здесь: гость, набравший её из поиска, иначе
+      // не добрался бы до оформления. Сама корзина живёт в меню — туда и
+      // возвращаемся, попросив её открыть
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      floatingActionButton: CartFab(
+        onPressed: () => Navigator.pop(context, true),
+      ),
       appBar: AppBar(
         backgroundColor: config.surface,
         foregroundColor: config.text,

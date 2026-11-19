@@ -138,6 +138,52 @@ Future<void> main() async {
     limiter.tryAcquire('c', t0.add(const Duration(minutes: 10))),
   );
 
+  // Заказы гостей: ключ — адрес, и таких ключей может быть сколько угодно,
+  // поэтому опустевшие обязаны убираться
+  final orders = SlidingWindowLimiter(
+    max: 2,
+    window: const Duration(minutes: 5),
+    sweepAt: 2,
+  );
+  expect(
+    '2 заказа с адреса проходят, третий — нет',
+    orders.tryAcquire('1.2.3.4', t0) &&
+        orders.tryAcquire('1.2.3.4', t0) &&
+        !orders.tryAcquire('1.2.3.4', t0),
+  );
+  expect('у другого адреса свой счёт', orders.tryAcquire('5.6.7.8', t0));
+  // Третий ключ перешагивает порог уборки, и спустя час от первых двух
+  // не остаётся ничего
+  orders.tryAcquire('9.9.9.9', t0.add(const Duration(hours: 1)));
+  expect('выдохшиеся ключи не копятся', orders.keyCount == 1, orders.keyCount);
+
+  // Адрес гостя берётся ПОСЛЕДНИМ: и nginx, и Caddy дописывают настоящий
+  // адрес к тому, что прислал клиент. Взяли бы первый — любой гость менял
+  // бы ключ ограничителя как хочет
+  Request withXff(String? v) => Request(
+    'POST',
+    Uri.parse('http://localhost:8090/api/public/orders'),
+    headers: {if (v != null) 'x-forwarded-for': v},
+  );
+  expect(
+    'x-forwarded-for: берётся последний адрес, а не присланный клиентом',
+    clientIp(withXff('1.2.3.4, 9.9.9.9')) == '9.9.9.9',
+    clientIp(withXff('1.2.3.4, 9.9.9.9')),
+  );
+  expect(
+    'одно значение в x-forwarded-for',
+    clientIp(withXff('9.9.9.9')) == '9.9.9.9',
+  );
+  expect('без заголовка и без сокета — общий ключ', clientIp(withXff(null)) == 'local');
+
+  // Без этого вся затея с заказами молча умрёт: браузер не пустит запрос
+  r = await send(app, 'POST', '/api/public/orders', origin: 'https://chuzhoy.kg');
+  expect(
+    'заказ с любого сайта разрешён (api/public)',
+    r.headers['access-control-allow-origin'] == '*',
+    r.headers,
+  );
+
   final dir = Directory.systemTemp.createTempSync('menu_quota_');
   try {
     File('${dir.path}/a.jpg').writeAsBytesSync(List.filled(1000, 1));

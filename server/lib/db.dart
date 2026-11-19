@@ -63,6 +63,9 @@ create table if not exists sessions (
   expires_at text not null
 );
 
+-- Внимание: /api/public/branch/<slug> отдаёт гостю строку целиком
+-- (`select b.*`). Любая колонка отсюда видна всем — секретов не класть.
+-- Ключи внешних сервисов живут в переменных окружения.
 create table if not exists branches (
   id         text primary key,
   cafe_id    text not null references cafes(id) on delete cascade,
@@ -86,6 +89,11 @@ create table if not exists branches (
   title_font text    not null default '',
   -- Языки меню (languages.dart), JSON-массив: первый — основной
   languages  text    not null default '["ru"]',
+  -- Куда уходят заказы гостей. Только цифры с кодом страны: 996555112233 —
+  -- значение подставляется в ссылку wa.me как есть. Пусто — кнопки заказа нет
+  order_whatsapp text not null default '',
+  -- Стоимость доставки, в тех же единицах, что цены блюд. 0 — бесплатно
+  delivery_price real not null default 0,
   is_active  integer not null default 1,
   sort_order integer not null default 0
 );
@@ -120,7 +128,41 @@ create table if not exists products (
   portions    text    not null default '[]'
 );
 
+-- Заказы гостей с сайта. Здесь лежат личные данные — имя, телефон, адрес, —
+-- поэтому читает их только кафе через /api/admin/orders. Публичного чтения
+-- нет и быть не должно, в SEO-страницы они не попадают.
+create table if not exists orders (
+  id             text primary key,
+  branch_id      text not null references branches(id) on delete cascade,
+  -- Короткий код заказа. Его придумывает клиент до открытия WhatsApp, потому
+  -- что текст сообщения собирается раньше, чем ответит сервер. По нему же
+  -- отбрасываются повторы при двойном нажатии
+  code           text not null default '',
+  order_type     text not null check (order_type in ('delivery', 'pickup')),
+  guest_name     text not null,
+  guest_phone    text not null,
+  -- Заполнен только у доставки; у самовывоза сервер принудительно пишет ''
+  address        text not null default '',
+  comment        text not null default '',
+  -- На каком языке гость читал меню
+  lang           text not null default '',
+  -- Снимок позиций, JSON. Заказ — это чек: имя и цена должны застыть на
+  -- момент заказа, поэтому не ссылка на products, а копия
+  items          text not null default '[]',
+  -- Все три суммы считает сервер, клиент денег не присылает вовсе
+  items_total    real not null default 0,
+  delivery_total real not null default 0,
+  total          real not null default 0,
+  status         text not null default 'new' check (status in ('new', 'done')),
+  -- Как заказ ушёл сотруднику; 'server' — на будущее, когда отправлять
+  -- будет сам сервер
+  delivery       text not null default 'wa_link',
+  sent_at        text,
+  created_at     text not null default (datetime('now'))
+);
+
 create index if not exists branches_cafe_idx    on branches (cafe_id, sort_order);
+create index if not exists orders_branch_idx     on orders (branch_id, created_at);
 create index if not exists categories_branch_idx on categories (branch_id, sort_order);
 create index if not exists products_branch_idx   on products (branch_id, sort_order);
 create index if not exists sessions_user_idx     on sessions (user_id);
@@ -171,6 +213,19 @@ void _migrate(Database db) {
         "alter table branches add column $col text not null default ''",
       );
     }
+  }
+
+  // Заказы гостей: WhatsApp филиала и стоимость доставки. Обе колонки
+  // появились разом, поэтому и проверка по одной
+  if (!branchCols.contains('order_whatsapp')) {
+    inTransaction(db, () {
+      db.execute(
+        "alter table branches add column order_whatsapp text not null default ''",
+      );
+      db.execute(
+        'alter table branches add column delivery_price real not null default 0',
+      );
+    });
   }
 
   // Оплата. Кафе, заведённые до неё, получают пробный месяц: иначе в день
