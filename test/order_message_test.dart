@@ -227,10 +227,12 @@ void main() {
     });
   });
 
-  test('код заказа: 4 знака без похожих друг на друга', () {
+  // Шесть, а не четыре: на четырёх знаках два гостя в загруженном филиале
+  // иногда получали один код, и сервер считал второй заказ повтором первого
+  test('код заказа: 6 знаков без похожих друг на друга', () {
     for (var i = 0; i < 200; i++) {
       final code = newOrderCode();
-      expect(code, matches(RegExp(r'^[A-Z0-9]{4}$')));
+      expect(code, matches(RegExp(r'^[A-Z0-9]{6}$')));
       expect(code, isNot(contains('0')));
       expect(code, isNot(contains('O')));
       expect(code, isNot(contains('1')));

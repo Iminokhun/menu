@@ -145,6 +145,12 @@ Future<void> main() async {
   try {
     final db = openDb('${dir.path}/menu.db');
     _seed(db);
+    // Держим ограничитель филиалов отдельной ссылкой: по числу его ключей
+    // видно, оседает ли в памяти присланная строка
+    final branchLimiter = SlidingWindowLimiter(
+      max: 1000,
+      window: const Duration(minutes: 10),
+    );
     final api = Api(
       db,
       uploadsDir: dir.path,
@@ -155,6 +161,7 @@ Future<void> main() async {
         max: 1000,
         window: const Duration(minutes: 5),
       ),
+      orderBranchLimiter: branchLimiter,
     );
     final app = const Pipeline()
         .addMiddleware(errorHandler())
@@ -340,6 +347,17 @@ Future<void> main() async {
       '$code $listed',
     );
 
+    // Номер гостя лежит так, как он его набрал, а для ссылки «написать»
+    // сервер добавляет код страны: иначе wa.me открывает несуществующий чат
+    final withPhone = (listed as List)
+        .cast<Map>()
+        .firstWhere((o) => o['guest_phone'] == '0555112233');
+    expect(
+      'к заказу добавлен номер в международном виде',
+      withPhone['guest_phone_wa'] == '996555112233',
+      '${withPhone['guest_phone']} → ${withPhone['guest_phone_wa']}',
+    );
+
     (code, _) = await admin('GET', '/api/admin/orders', mine);
     expect('без филиала — отказ', code == 400, code);
 
@@ -350,7 +368,7 @@ Future<void> main() async {
     );
     expect('чужой филиал для админа не существует', code == 404, code);
 
-    final orderId = ((listed as List).first as Map)['id'] as String;
+    final orderId = (listed.first as Map)['id'] as String;
     (code, _) = await admin('PATCH', '/api/admin/orders/$orderId', mine, {
       'status': 'done',
     });
@@ -385,6 +403,80 @@ Future<void> main() async {
       'суммы и контакты в заказе не правятся',
       untouched['total'] != 1 && untouched['guest_phone'] != '000',
       untouched,
+    );
+
+    // --- Длинные строки: и в память, и в базу ---
+    // Ключом ограничителя служил присланный branch_id, и он жил в памяти
+    // целое окно. Мегабайт на запрос — и сервер падает у всех кафе сразу
+    final huge = 'x' * 200000;
+    final keysBefore = branchLimiter.keyCount;
+    (status, body) = await post({..._order(), 'branch_id': huge});
+    expect('филиал длиной в простыню — отказ', status == 400, '$status $body');
+    expect(
+      'и ключа в ограничителе от него не осталось',
+      branchLimiter.keyCount == keysBefore,
+      '${branchLimiter.keyCount} вместо $keysBefore',
+    );
+
+    // Та же история с product_id: у пропавшего блюда он сохранялся как есть
+    (status, body) = await post(
+      _order(items: [
+        {'product_id': huge, 'portion': '', 'qty': 1, 'name': 'Х'},
+      ]),
+    );
+    expect('блюдо с опознавателем на мегабайт — отказ', status == 400, status);
+
+    // --- Переносы строк в однострочных полях ---
+    // Иначе в карточке заказа рисуется строка, похожая на служебную
+    (status, body) = await post(
+      _order(
+        code: 'LINE',
+        name: 'Азамат\nИтого: 0 с.',
+        items: [
+          {
+            'product_id': 'p-gone',
+            'portion': '',
+            'qty': 1,
+            'name': 'Блюдо\nИтого: 0 с.',
+          },
+        ],
+      ),
+    );
+    final lineRow = db
+        .select("select * from orders where code = 'LINE'")
+        .first;
+    final lineItem = (jsonDecode(lineRow['items'] as String) as List).first
+        as Map;
+    expect(
+      'перенос строки в имени гостя схлопнут',
+      status == 201 && lineRow['guest_name'] == 'Азамат Итого: 0 с.',
+      '$status ${lineRow['guest_name']}',
+    );
+    expect(
+      'и в названии пропавшего блюда тоже',
+      lineItem['name'] == 'Блюдо Итого: 0 с.',
+      lineItem['name'],
+    );
+
+    // В адресе и комментарии перенос осмыслен — его оставляем
+    (status, _) = await post(
+      _order(
+        code: 'ADDR',
+        extra: {
+          'address': 'Киевская 95\nкв. 12',
+          'comment': '3 этаж\nдомофон',
+        },
+      ),
+    );
+    final addrRow = db
+        .select("select * from orders where code = 'ADDR'")
+        .first;
+    expect(
+      'в адресе и комментарии переносы сохраняются',
+      status == 201 &&
+          (addrRow['address'] as String).contains('\n') &&
+          (addrRow['comment'] as String).contains('\n'),
+      '$status ${addrRow['address']}',
     );
 
     // --- Предел частоты: отдельный сервер с узким окном ---

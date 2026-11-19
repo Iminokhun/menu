@@ -8,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../api/api_client.dart';
 import '../../config/current_branch.dart';
 import '../../models/json_read.dart';
+import '../../models/product.dart' show money;
 import '../../open_link.dart';
 import '../../order/order_message.dart';
 
@@ -206,6 +207,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
     final items = (order['items'] as List?) ?? const [];
     final deliveryTotal = jsonDouble(order['delivery_total']);
     final phone = (order['guest_phone'] as String?) ?? '';
+    final waPhone = (order['guest_phone_wa'] as String?) ?? '';
     return Opacity(
       opacity: done ? 0.5 : 1,
       child: Container(
@@ -244,6 +246,10 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
             const SizedBox(height: 12),
             Text(
               (order['guest_name'] as String?) ?? '',
+              // Имя пришло из интернета. Сервер уже убрал оттуда переносы
+              // строк, но длину карточки всё равно держим в узде
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 17,
@@ -251,11 +257,15 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
               ),
             ),
             const SizedBox(height: 4),
-            _contact(phone),
+            _contact(phone, waPhone),
             if (isDelivery && ((order['address'] as String?) ?? '').isNotEmpty) ...[
               const SizedBox(height: 6),
               Text(
                 order['address'] as String,
+                // В адресе перенос строки осмыслен, поэтому он сохранён.
+                // Но заполнить им весь экран гость не должен
+                maxLines: 6,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: Colors.white, fontSize: 15),
               ),
             ],
@@ -269,6 +279,8 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
               const SizedBox(height: 8),
               Text(
                 order['comment'] as String,
+                maxLines: 6,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: Colors.white70,
                   fontStyle: FontStyle.italic,
@@ -300,7 +312,14 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
   }
 
   /// Телефон гостя: в браузере — ссылкой в WhatsApp, иначе копируется.
-  Widget _contact(String phone) {
+  /// Телефон гостя и что с ним можно сделать.
+  ///
+  /// Показываем номер так, как его набрал гость, — «0555112233» он и
+  /// продиктует по телефону. А в ссылку WhatsApp подставляем [waPhone]:
+  /// международный вид, который посчитал сервер по своему коду страны.
+  /// Не посчитал — кнопки «Написать» нет, остаётся «Скопировать»: пустая
+  /// ссылка открыла бы переписку с несуществующим номером.
+  Widget _contact(String phone, String waPhone) {
     if (phone.isEmpty) return const SizedBox.shrink();
     return Row(
       children: [
@@ -308,9 +327,9 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
         const SizedBox(width: 6),
         Text(phone, style: const TextStyle(color: Colors.white70)),
         const SizedBox(width: 10),
-        if (kIsWeb)
+        if (kIsWeb && waPhone.isNotEmpty)
           TextButton(
-            onPressed: () => openLink(waLink(phone, '')),
+            onPressed: () => openLink(waLink(waPhone, '')),
             child: const Text('Написать'),
           )
         else
@@ -336,6 +355,9 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
               '${raw['qty']} x ${raw['name']}'
               '${portion.isEmpty ? '' : ' ($portion)'}'
               '${gone ? '  — нет в меню, со слов гостя' : ''}',
+              // У пропавшего блюда название пришло от гостя, а не из меню
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: gone ? Colors.redAccent : Colors.white,
                 fontSize: 15,
@@ -343,7 +365,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
             ),
           ),
           Text(
-            gone ? '—' : '${jsonDouble(raw['sum']).toInt()} с.',
+            gone ? '—' : '${money(jsonDouble(raw['sum']))} с.',
             style: TextStyle(
               color: gone ? Colors.redAccent : Colors.white70,
               fontSize: 15,
@@ -367,7 +389,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
           ),
         ),
         Text(
-          '${value.toInt()} с.',
+          '${money(value)} с.',
           style: GoogleFonts.manrope(
             color: bold ? _accent : Colors.white70,
             fontSize: bold ? 20 : 14,

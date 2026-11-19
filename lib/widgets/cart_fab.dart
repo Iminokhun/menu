@@ -38,7 +38,7 @@ class CartFab extends StatelessWidget {
                 ),
               ),
               Text(
-                '${cartTotal(cart).toInt()} ${l.som}',
+                '${money(cartTotal(cart))} ${l.som}',
                 style: const TextStyle(
                   fontWeight: FontWeight.w900,
                   fontSize: 18,

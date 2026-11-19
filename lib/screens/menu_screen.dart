@@ -732,7 +732,7 @@ class _CartSheet extends StatelessWidget {
                                         ),
                                       ),
                                       Text(
-                                        "${(item.price * item.quantity).toInt()} ${l.som}",
+                                        "${money(item.price * item.quantity)} ${l.som}",
                                         style: TextStyle(
                                           fontSize: 18,
                                           fontWeight: FontWeight.bold,
@@ -784,7 +784,7 @@ class _CartSheet extends StatelessWidget {
                                 ),
                               ),
                               Text(
-                                "${total.toInt()} ${l.som}",
+                                "${money(total)} ${l.som}",
                                 style: GoogleFonts.manrope(
                                   fontSize: 36,
                                   fontWeight: FontWeight.w900,

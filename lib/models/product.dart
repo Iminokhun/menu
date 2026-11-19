@@ -113,23 +113,66 @@ double cartTotal(List<CartItem> cart) =>
 
 int cartCount(List<CartItem> cart) => cart.fold(0, (sum, i) => sum + i.quantity);
 
+/// Сумма для показа: «280», «280.50».
+///
+/// Одна функция на всё приложение — кнопку корзины, корзину, оформление,
+/// сообщение в WhatsApp и админку. Раньше экран отрезал дробную часть
+/// (`toInt`), а сообщение округляло: на экране «649 с.», в WhatsApp
+/// «649.90 с.», и слагаемые не сходились с итогом.
+///
+/// Округляем, а не отрезаем: 100.6 + 100.6 — это 201.2, а не 201.
+String money(double v) {
+  final rounded = (v * 100).round() / 100;
+  return rounded == rounded.roundToDouble()
+      ? rounded.round().toString()
+      : rounded.toStringAsFixed(2);
+}
+
+/// Сколько порций одного блюда помещается в одну строку заказа и сколько
+/// строк бывает в заказе. Те же числа стоят на сервере (`_maxOrderQty`,
+/// `_maxOrderItems`): перешагнув их, гость получил бы отказ уже после того,
+/// как сообщение ушло в WhatsApp, — заказ не попал бы никуда.
+const maxCartQuantity = 99;
+const maxCartLines = 100;
+
+/// Чем кончилась попытка положить блюдо в корзину.
+enum AddToCart {
+  added,
+
+  /// Упёрлись в [maxCartQuantity] по этому блюду
+  tooManyOfOne,
+
+  /// Упёрлись в [maxCartLines] разных строк
+  tooManyLines,
+}
+
 /// Добавить блюдо в корзину — из меню и из поиска одинаково.
 /// Та же порция того же блюда не дублируется, а прибавляется к количеству.
-void addToCart(Product p, Portion? portion, int quantity) {
+AddToCart addToCart(Product p, Portion? portion, int quantity) {
   final current = globalCart.value;
   final index = current.indexWhere(
     (i) => i.product.id == p.id && i.portion?.name == portion?.name,
   );
   if (index >= 0) {
-    current[index].quantity += quantity;
+    if (current[index].quantity >= maxCartQuantity) {
+      return AddToCart.tooManyOfOne;
+    }
+    current[index].quantity = (current[index].quantity + quantity)
+        .clamp(1, maxCartQuantity);
     globalCart.value = List.from(current);
   } else {
+    if (current.length >= maxCartLines) return AddToCart.tooManyLines;
     globalCart.value = [
       ...current,
-      CartItem(product: p, portion: portion, quantity: quantity),
+      CartItem(
+        product: p,
+        portion: portion,
+        quantity: quantity.clamp(1, maxCartQuantity),
+      ),
     ];
   }
   HapticFeedback.lightImpact();
+  return AddToCart.added;
 }
 
 /// Единый порядок для категорий и товаров: сначала поле «Порядок» из админки,

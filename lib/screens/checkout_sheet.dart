@@ -139,8 +139,16 @@ class _CheckoutSheetState extends State<CheckoutSheet> {
       // Меню у гостя отстало от кафе — подтянем его на будущее
       unawaited(menuStore.refresh());
       notice = l.orderSomeGone;
-    } else if ((receipt.deliveryTotal - draft.deliveryTotal).abs() > 0.01) {
-      notice = l.deliveryPriceChanged;
+    } else if ((receipt.total - draft.total).abs() > 0.01) {
+      // Сверяем именно итог, а не одну доставку: цена блюда или порции
+      // могла измениться, пока гость заполнял форму, и тогда в сообщении
+      // у него одна сумма, а в кафе другая. Меню на устройстве к тому же
+      // могло быть из кэша и вовсе устареть
+      unawaited(menuStore.refresh());
+      notice = l.orderTotalChanged.replaceAll(
+        '%s',
+        '${money(receipt.total)} ${l.som}',
+      );
     }
     if (notice != null) setState(() => _notice = notice);
   }
@@ -411,7 +419,7 @@ class _CheckoutSheetState extends State<CheckoutSheet> {
             ),
           ),
           Text(
-            '${value.toInt()} ${l.som}',
+            '${money(value)} ${l.som}',
             style: GoogleFonts.manrope(
               fontSize: bold ? 26 : 16,
               fontWeight: bold ? FontWeight.w900 : FontWeight.w600,

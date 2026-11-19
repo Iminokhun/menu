@@ -133,8 +133,12 @@ class WaLinkDelivery extends OrderDelivery {
     // тихое уведомление, а кафе видит заказ в переписке
     try {
       return await _post(draft, branch, lang);
-    } on ApiException {
-      // Одна попытка повтора: чаще всего это моргнувшая сеть
+    } on ApiException catch (e) {
+      // Повторяем только когда сервер не ответил или сам сломался
+      // (`isOffline`): чаще всего это моргнувшая сеть. На 400 второй раз
+      // придёт тот же отказ, а на 429 повтор съест ещё один заказ из
+      // тех немногих, что гостю дозволены за пять минут
+      if (!e.isOffline) return null;
       try {
         await Future<void>.delayed(const Duration(seconds: 2));
         return await _post(draft, branch, lang);

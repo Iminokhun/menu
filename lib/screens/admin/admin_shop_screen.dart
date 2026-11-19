@@ -48,6 +48,12 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
   /// а при обновлении того же (сохранили языки) — нет, иначе пропали бы
   /// несохранённые правки названия или телефона.
   String? _formBranchId;
+
+  /// Код страны для номеров, набранных с ведущего нуля. Приходит с сервера
+  /// (`DEFAULT_COUNTRY_CODE`) вместе с филиалом. Пусто — такие номера не
+  /// принимаются вовсе: угадывать страну здесь нельзя, неверный код увёл бы
+  /// все заказы кафе на чужой телефон
+  String _countryCode = '';
   bool _loading = true;
   bool _saving = false;
 
@@ -134,6 +140,7 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
         _hoursCtrl.text = (data['hours'] as String?) ?? '';
         _slugCtrl.text = (data['slug'] as String?) ?? '';
         _orderWaCtrl.text = (data['order_whatsapp'] as String?) ?? '';
+        _countryCode = (data['default_country_code'] as String?) ?? '';
         _deliveryPriceCtrl.text = _money(jsonDouble(data['delivery_price']));
         _logoUrl = (data['logo_url'] as String?) ?? '';
         _savedQrUrl = (data['qr_url'] as String?) ?? '';
@@ -823,11 +830,10 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
   /// Номер WhatsApp в том виде, в каком он сохранится. `null` — номер
   /// не распознан; пустая строка — заказы выключены.
   ///
-  /// Код страны у номера с ведущим нулём подставляет сервер
-  /// (`DEFAULT_COUNTRY_CODE`), поэтому здесь он тоже 996: админку открывают
-  /// в Кыргызстане, а окончательную проверку всё равно делает сервер.
+  /// Код страны берём тот же, что у сервера ([_countryCode]), иначе строка
+  /// «Сохранится как…» обещала бы одно, а сохранилось бы другое.
   String? get _orderWhatsapp =>
-      normalizeWaPhone(_orderWaCtrl.text, defaultCountryCode: '996');
+      normalizeWaPhone(_orderWaCtrl.text, defaultCountryCode: _countryCode);
 
   /// Стоимость доставки. `null` — введено не число.
   ///

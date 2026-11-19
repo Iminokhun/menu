@@ -181,6 +181,56 @@ void main() {
     expect(find.textContaining('перезвонит'), findsOneWidget);
   });
 
+  // Цена блюда могла измениться, пока гость заполнял форму, — или меню на
+  // устройстве вообще было из кэша. Тогда в его сообщении одна сумма,
+  // а в кафе другая, и молчать об этом нельзя
+  testWidgets('сумма в кафе разошлась с показанной — гостю говорят', (
+    tester,
+  ) async {
+    final delivery = _FakeDelivery(
+      receipt: const OrderReceipt(
+        id: 'o1',
+        code: 'A7F3K2',
+        itemsTotal: 700, // на экране было 560: 2 x 280
+        deliveryTotal: 150,
+        total: 850,
+        missing: 0,
+      ),
+    );
+    await _open(tester, delivery);
+
+    await tester.enterText(find.byType(TextField).at(0), 'Азамат');
+    await tester.enterText(find.byType(TextField).at(1), '0555112233');
+    await tester.enterText(find.byType(TextField).at(2), 'Киевская 95');
+    await _tapSend(tester);
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(find.textContaining('850'), findsOneWidget);
+  });
+
+  testWidgets('суммы сошлись — лишнего не говорим', (tester) async {
+    final delivery = _FakeDelivery(
+      receipt: const OrderReceipt(
+        id: 'o1',
+        code: 'A7F3K2',
+        itemsTotal: 560,
+        deliveryTotal: 150,
+        total: 710,
+        missing: 0,
+      ),
+    );
+    await _open(tester, delivery);
+
+    await tester.enterText(find.byType(TextField).at(0), 'Азамат');
+    await tester.enterText(find.byType(TextField).at(1), '0555112233');
+    await tester.enterText(find.byType(TextField).at(2), 'Киевская 95');
+    await _tapSend(tester);
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(find.textContaining('Цены изменились'), findsNothing);
+    expect(find.textContaining('не сохранился'), findsNothing);
+  });
+
   testWidgets('заказ не сохранился — гостя не пугаем, но говорим', (
     tester,
   ) async {

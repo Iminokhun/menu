@@ -13,10 +13,32 @@ import '../theme/theme_config.dart';
 import '../l10n/app_localizations.dart';
 import '../l10n/translation_service.dart';
 
+/// Сказать гостю, почему блюдо не легло в корзину.
+///
+/// Молча проглотить нельзя: он нажал «+» и ждёт, что количество вырастет.
+/// Пределы те же, что у сервера, — иначе отказ пришёл бы уже после того,
+/// как сообщение ушло в WhatsApp, и хвост заказа не попал бы никуда.
+void _tellCartLimit(BuildContext context, AddToCart result) {
+  if (result == AddToCart.added) return;
+  final l = AppLocalizations.of(context);
+  final text = result == AddToCart.tooManyOfOne
+      ? l.cartItemLimit.replaceAll('%d', '$maxCartQuantity')
+      : l.cartLinesLimit.replaceAll('%d', '$maxCartLines');
+  ScaffoldMessenger.of(context)
+    ..clearSnackBars()
+    ..showSnackBar(
+      SnackBar(
+        content: Text(text),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+}
+
 class LuxuryCard extends StatelessWidget {
   final Product product;
   final ThemeConfig config;
-  final Function(Product, Portion?, int) onAdd;
+  final AddToCart Function(Product, Portion?, int) onAdd;
 
   const LuxuryCard({
     super.key,
@@ -217,7 +239,7 @@ class LuxuryCard extends StatelessWidget {
                       children: [
                         Builder(
                           builder: (ctx) => Text(
-                            "${product.price.toInt()} ${AppLocalizations.of(ctx).som}",
+                            "${money(product.price)} ${AppLocalizations.of(ctx).som}",
                             style: GoogleFonts.manrope(
                               fontSize: isAcc ? 24 : 20,
                               fontWeight: FontWeight.w900,
@@ -233,7 +255,10 @@ class LuxuryCard extends StatelessWidget {
                         // промахиваются и открывают карточку вместо «+»
                         Pressable(
                           pressedScale: 0.85,
-                          onTap: () => onAdd(product, null, 1),
+                          onTap: () => _tellCartLimit(
+                            context,
+                            onAdd(product, null, 1),
+                          ),
                           child: Container(
                             width: 44,
                             height: 44,
@@ -271,7 +296,7 @@ class LuxuryCard extends StatelessWidget {
 class _ProductDetailDialog extends StatefulWidget {
   final Product product;
   final ThemeConfig config;
-  final Function(Product, Portion?, int) onAdd;
+  final AddToCart Function(Product, Portion?, int) onAdd;
   const _ProductDetailDialog({
     required this.product,
     required this.config,
@@ -580,7 +605,12 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
       height: 50,
       child: ElevatedButton(
         onPressed: () {
-          widget.onAdd(widget.product, selectedPortion, quantity);
+          // Сообщение показываем до закрытия диалога: SnackBar живёт выше,
+          // у Scaffold, и закрытие его не уносит
+          _tellCartLimit(
+            context,
+            widget.onAdd(widget.product, selectedPortion, quantity),
+          );
           Navigator.pop(context);
         },
         style: ElevatedButton.styleFrom(
@@ -605,7 +635,7 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
             Flexible(
               child: Builder(
                 builder: (ctx) => Text(
-                  "(${totalPrice.toInt()} ${AppLocalizations.of(ctx).som})",
+                  "(${money(totalPrice)} ${AppLocalizations.of(ctx).som})",
                   style: const TextStyle(
                     fontWeight: FontWeight.w900,
                     fontSize: 16,

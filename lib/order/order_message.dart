@@ -123,14 +123,22 @@ String? cleanGuestPhone(String raw) {
   return d;
 }
 
-/// Код заказа из четырёх знаков, без похожих друг на друга (`0` и `O`,
-/// `1` и `I`): его диктуют по телефону.
+/// Код заказа, без похожих друг на друга знаков (`0` и `O`, `1` и `I`):
+/// его диктуют по телефону.
+///
+/// Шесть знаков, а не четыре. Сервер за десять минут считает заказы с
+/// одинаковым кодом повтором одного и того же и второй не сохраняет. На
+/// четырёх знаках (миллион сочетаний) в загруженном филиале такое
+/// совпадение случалось бы примерно раз на шестьсот часов пик — и заказ
+/// второго гостя пропадал бы молча. На шести это миллиард сочетаний.
 const _codeAlphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const _codeLength = 6;
 final _random = Random();
 
-String newOrderCode() =>
-    List.generate(4, (_) => _codeAlphabet[_random.nextInt(_codeAlphabet.length)])
-        .join();
+String newOrderCode() => List.generate(
+  _codeLength,
+  (_) => _codeAlphabet[_random.nextInt(_codeAlphabet.length)],
+).join();
 
 /// Ссылка, которая открывает WhatsApp с уже набранным сообщением.
 ///
@@ -211,10 +219,6 @@ const _labels = <String, Map<String, String>>{
 Map<String, String> _labelsFor(String language) =>
     _labels[language] ?? _labels['ru']!;
 
-/// Сумма без лишнего хвоста: 640, но 640.5 так и останется.
-String _money(double v) =>
-    v == v.roundToDouble() ? v.round().toString() : v.toStringAsFixed(2);
-
 /// Жирный в WhatsApp — звёздочки вокруг текста.
 ///
 /// Выделяем только две вещи: адрес доставки и итог. Выделить больше — значит
@@ -246,7 +250,9 @@ String _bold(String s) => '*$s*';
 String buildOrderText(OrderDraft draft, {required Branch branch}) {
   final l = _labelsFor(branch.mainLanguage);
   final som = l['som']!;
-  String money(double v) => '${_money(v)} $som';
+  // Та же функция, что показывает суммы на экране: иначе в корзине «649 с.»,
+  // а в сообщении «649.90 с.»
+  String withSom(double v) => '${money(v)} $som';
 
   final head = <String>[
     branch.name,
@@ -269,15 +275,15 @@ String buildOrderText(OrderDraft draft, {required Branch branch}) {
     for (final i in draft.cart)
       '${i.quantity} x ${i.product.name}'
       '${i.portion == null ? '' : ' (${i.portion!.name})'}'
-      ' — ${money(i.price * i.quantity)}',
+      ' — ${withSom(i.price * i.quantity)}',
   ];
 
   final sums = <String>[
     if (draft.deliveryTotal > 0) ...[
-      '${l['items']}: ${money(draft.itemsTotal)}',
-      '${l['deliveryCost']}: ${money(draft.deliveryTotal)}',
+      '${l['items']}: ${withSom(draft.itemsTotal)}',
+      '${l['deliveryCost']}: ${withSom(draft.deliveryTotal)}',
     ],
-    _bold('${l['total']}: ${money(draft.total)}'),
+    _bold('${l['total']}: ${withSom(draft.total)}'),
   ];
 
   final tail = <String>[

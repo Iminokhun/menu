@@ -117,6 +117,15 @@ const _maxUploadBytes = 10 * 1024 * 1024;
 /// даже не вошедший (вход), мог бы прислать гигабайт и занять память
 const _maxBodyBytes = 1024 * 1024;
 
+/// Предел длины опознавателя. Все id в базе — UUID из 36 знаков (`newId`),
+/// так что запас тут огромный.
+///
+/// Нужен не для красоты: без него присланный id попадает и в ключ
+/// ограничителя частоты, и в сохранённый заказ. Мегабайтная строка в теле
+/// запроса оседала бы в памяти на целое окно или ложилась бы в базу —
+/// и то, и другое валит сервер у всех кафе разом.
+const _maxIdLength = 64;
+
 /// Длина текстовых полей. Без предела в название можно положить мегабайты —
 /// меню у гостей грузилось бы минутами
 const _maxText = {
@@ -146,6 +155,9 @@ final _hiddenChars = RegExp(
   '[${[
     (0x00, 0x08), (0x0B, 0x0C), (0x0E, 0x1F), (0x7F, 0x7F),
     (0x202A, 0x202E), (0x2066, 0x2069),
+    // Пробелы нулевой ширины: ими разрывают слово так, что глазом не
+    // отличишь. Соединитель 0x200D не трогаем — на нём держатся эмодзи
+    (0x200B, 0x200B), (0xFEFF, 0xFEFF),
   ].map((r) => '${String.fromCharCode(r.$1)}-${String.fromCharCode(r.$2)}').join()}]',
 );
 
@@ -353,6 +365,24 @@ class Api {
       final v = m[f];
       if (v is String && v.startsWith('/uploads/')) m[f] = '${_base(req)}$v';
     }
+    // Номер гостя хранится так, как он его набрал: «0555112233» — то, что
+    // кафе узнаёт и диктует вслух. Для ссылки «написать в WhatsApp» нужен
+    // международный вид, а код страны знает только сервер
+    // (DEFAULT_COUNTRY_CODE). Не вышло — пусто, и кнопки в админке нет
+    if (m.containsKey('guest_phone')) {
+      m['guest_phone_wa'] =
+          normalizeWaPhone(
+            _str(m['guest_phone']),
+            defaultCountryCode: defaultCountryCode,
+          ) ??
+          '';
+    }
+    // Код страны для номеров, набранных с нуля, знает только сервер.
+    // Админка показывает «Сохранится как…» ещё до отправки, и без этого
+    // ей пришлось бы угадывать страну самой — ровно то, чего мы избегаем
+    if (m.containsKey('order_whatsapp')) {
+      m['default_country_code'] = defaultCountryCode;
+    }
     // У филиала без сохранённой ссылки QR она собирается из адреса меню
     if (m.containsKey('qr_url') &&
         m['slug'] is String &&
@@ -543,6 +573,15 @@ class Api {
 
   /// Текст из формы: без невидимых символов, с обрезанными пробелами по
   /// краям и не длиннее предела поля
+  /// Поле, которое по смыслу занимает одну строку: имя гостя, название
+  /// блюда, размер порции. Переносы строк схлопываем в пробел.
+  ///
+  /// Иначе внутри такого поля рисуется строка, похожая на служебную
+  /// («Итого: 0 с.»), и карточка заказа в админке начинает врать.
+  /// Адрес и комментарий сюда не входят: там перенос строки осмыслен.
+  static String _line(String field, String v) =>
+      _text(field, v.replaceAll(RegExp(r'[\r\n]+'), ' '));
+
   static String _text(String field, String v) {
     final t = v.replaceAll(_hiddenChars, '').trim();
     final max = _maxText[field] ?? _maxTextDefault;
@@ -906,12 +945,9 @@ class Api {
     if (!_orderIp.tryAcquire(clientIp(req))) {
       throw ApiError(429, _tooManyOrders, code: 'too_often');
     }
-    final branchId = body['branch_id'];
-    if (branchId is! String || branchId.isEmpty) {
+    final branchId = _str(body['branch_id']);
+    if (branchId.isEmpty || branchId.length > _maxIdLength) {
       throw ApiError(400, 'Не указан филиал');
-    }
-    if (!_orderBranch.tryAcquire(branchId)) {
-      throw ApiError(429, _tooManyOrders, code: 'too_often');
     }
 
     final rows = db.select(
@@ -922,6 +958,14 @@ class Api {
     );
     if (rows.isEmpty) throw ApiError(404, 'Филиал не найден');
     final branch = rows.first;
+    // Предел по филиалу — только после того, как филиал нашёлся: ключом
+    // обязан быть существующий id. Иначе ключи заводит кто угодно, просто
+    // присылая каждый раз новую строку, и память растёт без предела.
+    // Запрос до этой точки один и по первичному ключу, а гостя уже
+    // придержал предел по адресу выше
+    if (!_orderBranch.tryAcquire(branch['id'] as String)) {
+      throw ApiError(429, _tooManyOrders, code: 'too_often');
+    }
     if (_access(branch['cafe_id'] as String).access == Access.expired) {
       throw ApiError(403, _unpaidGuest, code: 'unpaid');
     }
@@ -942,7 +986,7 @@ class Api {
     }
     final isDelivery = type == 'delivery';
 
-    final name = _text('guest_name', _str(body['name']));
+    final name = _line('guest_name', _str(body['name']));
     if (name.isEmpty) throw ApiError(400, 'Укажите имя');
     final phone = cleanGuestPhone(_str(body['phone']));
     if (phone == null) throw ApiError(400, 'Укажите телефон');
@@ -997,10 +1041,14 @@ class Api {
       if (raw is! Map) throw ApiError(400, 'Неверная позиция заказа');
       final id = _str(raw['product_id']);
       final qty = raw['qty'];
-      if (id.isEmpty || qty is! int || qty < 1 || qty > _maxOrderQty) {
+      if (id.isEmpty ||
+          id.length > _maxIdLength ||
+          qty is! int ||
+          qty < 1 ||
+          qty > _maxOrderQty) {
         throw ApiError(400, 'Неверная позиция заказа');
       }
-      final portion = _text('name', _str(raw['portion']));
+      final portion = _line('name', _str(raw['portion']));
       final product = menu[id];
       if (product == null) {
         // Блюдо исчезло из меню, пока гость собирал заказ. Отказать нельзя:
@@ -1010,7 +1058,7 @@ class Api {
         // привезёт меньше, чем просили
         items.add({
           'product_id': id,
-          'name': _text('name', _str(raw['name'])),
+          'name': _line('name', _str(raw['name'])),
           'portion': portion,
           'price': 0,
           'qty': qty,
