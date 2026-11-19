@@ -7,6 +7,7 @@ import '../config/current_branch.dart';
 import '../menu_store.dart';
 import '../models/product.dart';
 import '../order/order_delivery.dart';
+import '../widgets/auth_image.dart';
 import '../widgets/cart_fab.dart';
 import 'checkout_sheet.dart';
 import '../theme/theme_config.dart';
@@ -19,6 +20,82 @@ import '../l10n/app_localizations.dart';
 import '../l10n/translation_service.dart';
 import '../widgets/lang_switcher.dart';
 import '../responsive.dart';
+
+/// Блюдо в строке корзины: фото, а на нём количество.
+///
+/// Фото есть не у каждого блюда — у таких остаётся прежний цветной
+/// квадрат с количеством. Серая заглушка «нет фото» в списке из трёх
+/// строк читалась бы как поломка, а квадрат выглядит задуманным.
+class _CartThumb extends StatelessWidget {
+  const _CartThumb({required this.item, required this.config});
+
+  final CartItem item;
+  final ThemeConfig config;
+
+  static const double _side = 48;
+
+  @override
+  Widget build(BuildContext context) {
+    if (item.product.imageUrl.isEmpty) {
+      return Container(
+        width: _side,
+        height: _side,
+        decoration: BoxDecoration(
+          color: config.accent,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          '${item.quantity}x',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: config.onAccent,
+          ),
+        ),
+      );
+    }
+    return SizedBox(
+      width: _side,
+      height: _side,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: AuthImage(
+              url: item.product.imageUrl,
+              width: _side,
+              height: _side,
+            ),
+          ),
+          // Количество — своей плашкой в углу: прямо на фото цифры
+          // теряются и на светлой еде, и на тёмной
+          Align(
+            alignment: Alignment.bottomRight,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: config.accent,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(8),
+                  bottomRight: Radius.circular(12),
+                ),
+              ),
+              child: Text(
+                '${item.quantity}x',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: config.onAccent,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 /// Открыть корзину поверх текущего экрана.
 ///
@@ -686,24 +763,7 @@ class _CartSheet extends StatelessWidget {
                                   ),
                                   child: Row(
                                     children: [
-                                      Container(
-                                        width: 35,
-                                        height: 35,
-                                        decoration: BoxDecoration(
-                                          color: config.accent,
-                                          borderRadius: BorderRadius.circular(
-                                            10,
-                                          ),
-                                        ),
-                                        alignment: Alignment.center,
-                                        child: Text(
-                                          "${item.quantity}x",
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            color: config.onAccent,
-                                          ),
-                                        ),
-                                      ),
+                                      _CartThumb(item: item, config: config),
                                       const SizedBox(width: 15),
                                       Expanded(
                                         child: Column(
