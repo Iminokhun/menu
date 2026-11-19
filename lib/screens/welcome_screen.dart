@@ -211,6 +211,26 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // «Назад» — и системная кнопка, и кнопка браузера — обязана вести
+    // туда же, куда «Все кафе». Переход из каталога в меню делается
+    // подменой экрана в `home`, а не Navigator.push, поэтому своей записи
+    // в истории браузера у него нет: без этого «назад» уводила гостя с
+    // сайта совсем. Пришедшему по QR возвращаться некуда — там «назад»
+    // работает как обычно и уводит на страницу, с которой он пришёл.
+    //
+    // Экран категории, карточка блюда, корзина и поиск — обычные
+    // маршруты, их Navigator закрывает сам, и сюда дело доходит только
+    // на самом верхнем экране меню
+    return PopScope(
+      canPop: !openedFromCatalog.value,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) backToCatalog();
+      },
+      child: _buildScreen(context),
+    );
+  }
+
+  Widget _buildScreen(BuildContext context) {
     return ValueListenableBuilder<ThemeConfig>(
       valueListenable: appTheme,
       builder: (context, config, child) {

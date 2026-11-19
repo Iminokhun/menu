@@ -101,64 +101,61 @@ class CafeAndalusRoot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: false,
-      child: ValueListenableBuilder<Locale>(
-        valueListenable: currentLocale,
-        builder: (context, locale, child) {
-          return ValueListenableBuilder<ThemeConfig>(
-            valueListenable: appTheme,
-            builder: (context, config, child) {
-              return MaterialApp(
-                title: 'menu.kg',
-                debugShowCheckedModeBanner: false,
-                locale: locale,
-                supportedLocales: [
-                  for (final l in menuLanguages) Locale(l.code),
-                ],
-                localizationsDelegates: const [
-                  AppLocalizationsDelegate(),
-                  GlobalMaterialLocalizations.delegate,
-                  GlobalWidgetsLocalizations.delegate,
-                  GlobalCupertinoLocalizations.delegate,
-                ],
-                theme: ThemeData(
-                  brightness: config.brightness,
-                  scaffoldBackgroundColor: config.bg,
-                  useMaterial3: true,
-                  textTheme: TextTheme(bodyMedium: GoogleFonts.manrope()),
-                ),
-                // Экран выбора филиала и главный экран подменяются здесь,
-                // а не переходом в Navigator: сам выбор только выставляет
-                // currentBranch, и смена филиала из админки работает так же.
-                home: ValueListenableBuilder<Branch?>(
-                  valueListenable: currentBranch,
-                  builder: (context, branch, child) => branch != null
-                      ? const WelcomeScreen()
-                      // Филиал известен, но меню ни разу не скачивалось и
-                      // сети нет — выбор филиала тут не поможет
-                      : ValueListenableBuilder<MenuResult?>(
-                          valueListenable: menuStore.status,
-                          builder: (context, status, child) => switch (status) {
-                            // Меню из каталога не открылось — гость остаётся
-                            // в каталоге, причину покажет сам каталог
-                            _ when openedFromCatalog.value =>
-                              const CatalogScreen(),
-                            MenuResult.unpaid => const MenuUnavailableScreen(),
-                            MenuResult.offlineNoCache when menuStore.slug != null =>
-                              const NoConnectionScreen(),
-                            // В вебе без `?branch=` — главная с каталогом
-                            // кафе, на планшете — выбор филиала сотрудником
-                            _ when kIsWeb => const CatalogScreen(),
-                            _ => const BranchPickerScreen(),
-                          },
-                        ),
-                ),
-              );
-            },
-          );
-        },
-      ),
+    return ValueListenableBuilder<Locale>(
+      valueListenable: currentLocale,
+      builder: (context, locale, child) {
+        return ValueListenableBuilder<ThemeConfig>(
+          valueListenable: appTheme,
+          builder: (context, config, child) {
+            return MaterialApp(
+              title: 'menu.kg',
+              debugShowCheckedModeBanner: false,
+              locale: locale,
+              supportedLocales: [
+                for (final l in menuLanguages) Locale(l.code),
+              ],
+              localizationsDelegates: const [
+                AppLocalizationsDelegate(),
+                GlobalMaterialLocalizations.delegate,
+                GlobalWidgetsLocalizations.delegate,
+                GlobalCupertinoLocalizations.delegate,
+              ],
+              theme: ThemeData(
+                brightness: config.brightness,
+                scaffoldBackgroundColor: config.bg,
+                useMaterial3: true,
+                textTheme: TextTheme(bodyMedium: GoogleFonts.manrope()),
+              ),
+              // Экран выбора филиала и главный экран подменяются здесь,
+              // а не переходом в Navigator: сам выбор только выставляет
+              // currentBranch, и смена филиала из админки работает так же.
+              home: ValueListenableBuilder<Branch?>(
+                valueListenable: currentBranch,
+                builder: (context, branch, child) => branch != null
+                    ? const WelcomeScreen()
+                    // Филиал известен, но меню ни разу не скачивалось и
+                    // сети нет — выбор филиала тут не поможет
+                    : ValueListenableBuilder<MenuResult?>(
+                        valueListenable: menuStore.status,
+                        builder: (context, status, child) => switch (status) {
+                          // Меню из каталога не открылось — гость остаётся
+                          // в каталоге, причину покажет сам каталог
+                          _ when openedFromCatalog.value =>
+                            const CatalogScreen(),
+                          MenuResult.unpaid => const MenuUnavailableScreen(),
+                          MenuResult.offlineNoCache when menuStore.slug != null =>
+                            const NoConnectionScreen(),
+                          // В вебе без `?branch=` — главная с каталогом
+                          // кафе, на планшете — выбор филиала сотрудником
+                          _ when kIsWeb => const CatalogScreen(),
+                          _ => const BranchPickerScreen(),
+                        },
+                      ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }

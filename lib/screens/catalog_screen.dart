@@ -231,10 +231,14 @@ class _CatalogScreenState extends State<CatalogScreen> {
     return ValueListenableBuilder<ThemeConfig>(
       valueListenable: appTheme,
       builder: (context, config, child) => PopScope(
-        // Системная «назад» ведёт по шагам каталога, а на главной — никуда
-        canPop: false,
+        // «Назад» ведёт по шагам каталога: филиалы → кафе → главная.
+        // Шаги сменяются внутри экрана, своих записей в истории браузера
+        // у них нет. А вот с первой страницы возвращать некуда: там
+        // «назад» работает как обычно и уводит гостя на страницу,
+        // с которой он пришёл — иначе он заперт на сайте
+        canPop: _page == _firstPage,
         onPopInvokedWithResult: (didPop, _) {
-          if (!didPop && _page != _firstPage) _back();
+          if (!didPop) _back();
         },
         child: Scaffold(
           backgroundColor: config.bg,
