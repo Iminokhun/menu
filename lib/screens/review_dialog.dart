@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -9,6 +10,7 @@ import '../models/branch.dart';
 import '../open_link.dart';
 import '../review/review_message.dart';
 import '../review/review_once.dart';
+import '../responsive.dart';
 import '../review/review_sender.dart';
 import '../theme/current_theme.dart';
 import '../theme/theme_config.dart';
@@ -16,18 +18,21 @@ import '../widgets/star_rating.dart';
 
 /// Открыть форму отзыва поверх текущего экрана.
 ///
-/// Функция живёт здесь, а не в экране меню, как корзина: зовут её из одного
-/// места — с верхнего экрана филиала.
-void showReviewSheet(
+/// Диалогом посередине, а не шторкой снизу: шторка — для продолжения
+/// того, что уже на экране (корзина, оформление заказа), а отзыв ни с чем
+/// на экране не связан. К тому же полей всего четыре — внизу экрана форма
+/// выглядела бы оборванной.
+///
+/// Функция живёт здесь, а не в экране меню, как корзина: зовут её из
+/// одного места — с верхнего экрана филиала.
+void showReviewForm(
   BuildContext context, {
   required Branch branch,
   required ReviewSender sender,
 }) {
-  showModalBottomSheet(
+  showDialog<void>(
     context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    builder: (_) => ReviewSheet(branch: branch, sender: sender),
+    builder: (_) => ReviewDialog(branch: branch, sender: sender),
   );
 }
 
@@ -35,17 +40,17 @@ void showReviewSheet(
 ///
 /// Обязательных полей нет вовсе, поэтому нет и красных ошибок: кнопка просто
 /// не нажимается, пока не поставлена оценка — без неё отправлять нечего.
-class ReviewSheet extends StatefulWidget {
+class ReviewDialog extends StatefulWidget {
   final Branch branch;
   final ReviewSender sender;
 
-  const ReviewSheet({super.key, required this.branch, required this.sender});
+  const ReviewDialog({super.key, required this.branch, required this.sender});
 
   @override
-  State<ReviewSheet> createState() => _ReviewSheetState();
+  State<ReviewDialog> createState() => _ReviewDialogState();
 }
 
-class _ReviewSheetState extends State<ReviewSheet> {
+class _ReviewDialogState extends State<ReviewDialog> {
   final _waiter = TextEditingController();
   final _table = TextEditingController();
   final _comment = TextEditingController();
@@ -110,21 +115,25 @@ class _ReviewSheetState extends State<ReviewSheet> {
   Widget build(BuildContext context) {
     final config = appTheme.value;
     final l = AppLocalizations.of(context);
-    return Padding(
-      // Чтобы клавиатура не закрывала поля и кнопку
-      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+    final screen = MediaQuery.sizeOf(context);
+    final inset = Responsive.isWide(screen) ? 20.0 : 15.0;
+    // Ширина желаемая, но не больше экрана; на широком мониторе форма из
+    // четырёх полей во всю ширину смотрелась бы нелепо
+    final width = math.min(460.0, screen.width - inset * 2);
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      // Dialog сам поднимает содержимое над клавиатурой
+      insetPadding: EdgeInsets.all(inset),
       child: Container(
+        width: width,
         decoration: BoxDecoration(
           color: config.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
-          border: Border.all(color: config.accent.withValues(alpha: 0.3)),
+          borderRadius: BorderRadius.circular(25),
+          border: Border.all(color: config.accent.withValues(alpha: 0.5)),
         ),
-        child: SafeArea(
-          top: false,
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(25, 20, 25, 25),
-            child: _sent ? _done(config, l) : _form(config, l),
-          ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(25, 20, 25, 25),
+          child: _sent ? _done(config, l) : _form(config, l),
         ),
       ),
     );
@@ -145,7 +154,7 @@ class _ReviewSheetState extends State<ReviewSheet> {
       ),
       IconButton(
         onPressed: () => Navigator.pop(context),
-        icon: Icon(Icons.keyboard_arrow_down, size: 32, color: config.text),
+        icon: Icon(Icons.close_rounded, size: 26, color: config.text),
       ),
     ],
   );

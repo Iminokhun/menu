@@ -5,7 +5,7 @@ import 'package:cafe_andalus_menu/l10n/app_localizations.dart';
 import 'package:cafe_andalus_menu/models/branch.dart';
 import 'package:cafe_andalus_menu/review/review_message.dart';
 import 'package:cafe_andalus_menu/review/review_sender.dart';
-import 'package:cafe_andalus_menu/screens/review_sheet.dart';
+import 'package:cafe_andalus_menu/screens/review_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -56,7 +56,7 @@ Future<void> _open(WidgetTester tester, ReviewSender sender) async {
         GlobalWidgetsLocalizations.delegate,
       ],
       home: Scaffold(
-        body: ReviewSheet(branch: _branch, sender: sender),
+        body: ReviewDialog(branch: _branch, sender: sender),
       ),
     ),
   );

@@ -22,7 +22,7 @@ import '../review/review_once.dart';
 import '../review/review_sender.dart';
 import 'catalog_screen.dart';
 import 'menu_screen.dart';
-import 'review_sheet.dart';
+import 'review_dialog.dart';
 import 'search_screen.dart';
 import 'admin/admin_shell.dart';
 import '../api/api_client.dart';
@@ -340,7 +340,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
         return TextButton.icon(
           onPressed: () {
             HapticFeedback.selectionClick();
-            showReviewSheet(context, branch: branch, sender: sender);
+            showReviewForm(context, branch: branch, sender: sender);
           },
           icon: Icon(
             Icons.star_outline_rounded,
