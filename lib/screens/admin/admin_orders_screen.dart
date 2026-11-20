@@ -7,10 +7,35 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../api/api_client.dart';
 import '../../config/current_branch.dart';
+import 'admin_filters.dart';
 import '../../models/json_read.dart';
 import '../../models/product.dart' show money;
 import '../../open_link.dart';
 import '../../order/order_message.dart';
+
+/// Отметка заказа. «Новые» — рабочее состояние экрана, с него и
+/// открывается: готовые уже никого не ждут.
+enum _Status {
+  fresh('Новые', 'new'),
+  done('Готовые', 'done'),
+  any('Все заказы', null);
+
+  const _Status(this.label, this.value);
+  final String label;
+  final String? value;
+}
+
+/// Способ получения. Подписи не повторяют слово «все» из отметок: два
+/// одинаковых слова в соседних группах неразличимы.
+enum _Type {
+  any('Любой способ', null),
+  delivery('Доставка', 'delivery'),
+  pickup('Самовывоз', 'pickup');
+
+  const _Type(this.label, this.value);
+  final String label;
+  final String? value;
+}
 
 /// Заказы, оформленные гостями на сайте.
 ///
@@ -41,7 +66,28 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
   bool _loading = true;
   bool _busy = false;
   String? _loadError;
-  bool _onlyNew = true;
+
+  /// Отбор. Считает его сервер, а не экран: выборка ограничена сотней
+  /// строк, и заказы за сегодня или только самовывоз иначе могли бы в неё
+  /// не попасть
+  AdminPeriod _period = AdminPeriod.all;
+  _Status _status = _Status.fresh;
+  _Type _type = _Type.any;
+
+  /// Отличается ли отбор от рабочего вида, с которого экран открывается
+  bool get _filtered =>
+      _period != AdminPeriod.all ||
+      _status != _Status.fresh ||
+      _type != _Type.any;
+
+  static const _limit = 100;
+
+  /// Нажали, пока предыдущий запрос был в пути: повторим его в конце,
+  /// иначе отбор молча расходится с тем, что на экране
+  bool _again = false;
+
+  /// Поколение запроса: опоздавший ответ не должен перебить новый
+  int _gen = 0;
   Timer? _timer;
 
   @override
@@ -75,30 +121,56 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
 
   void _reload() => _load();
 
+  /// Смена отбора: перерисовать, отодвинуть опрос и перечитать список.
+  /// Опрос отодвигается, чтобы список не дёргался под руками
+  void _apply(VoidCallback change) {
+    setState(change);
+    _syncTimer();
+    _load();
+  }
+
+  void _reset() => _apply(() {
+    _period = AdminPeriod.all;
+    _status = _Status.fresh;
+    _type = _Type.any;
+  });
+
   Future<void> _load() async {
     final branch = currentBranch.value;
-    if (branch == null || _busy) return;
+    if (branch == null) return;
+    if (_busy) {
+      _again = true;
+      return;
+    }
     _busy = true;
+    final gen = ++_gen;
     try {
+      final since = sinceFor(_period);
       final rows = await api.list('/api/admin/orders', {
         'branch_id': branch.id,
-        if (_onlyNew) 'status': 'new',
-        'limit': '100',
+        if (since != null) 'since': since,
+        if (_status.value != null) 'status': _status.value!,
+        if (_type.value != null) 'order_type': _type.value!,
+        'limit': '$_limit',
       });
-      if (!mounted) return;
+      if (!mounted || gen != _gen) return;
       setState(() {
         _orders = rows;
         _loading = false;
         _loadError = null;
       });
     } on ApiException catch (e) {
-      if (!mounted) return;
+      if (!mounted || gen != _gen) return;
       setState(() {
         _loading = false;
         _loadError = e.message;
       });
     } finally {
       _busy = false;
+      if (_again) {
+        _again = false;
+        _load();
+      }
     }
   }
 
@@ -127,46 +199,86 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
     );
   }
 
-  Widget _toolbar() => Padding(
-    padding: const EdgeInsets.fromLTRB(24, 20, 24, 10),
-    child: Row(
-      children: [
-        Text(
-          'ЗАКАЗЫ',
-          style: GoogleFonts.manrope(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 1.5,
-          ),
+  Widget _toolbar() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+        child: Row(
+          children: [
+            Text(
+              'ЗАКАЗЫ',
+              style: GoogleFonts.manrope(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.5,
+              ),
+            ),
+            const Spacer(),
+            if (_orders.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Text(
+                  'Показано: ${_orders.length}',
+                  style: const TextStyle(color: Colors.white54, fontSize: 13),
+                ),
+              ),
+            IconButton(
+              tooltip: 'Обновить',
+              onPressed: () => _apply(() {}),
+              icon: const Icon(Icons.refresh, color: Colors.white54),
+            ),
+          ],
         ),
-        const SizedBox(width: 20),
-        ChoiceChip(
-          label: const Text('Новые'),
-          selected: _onlyNew,
-          onSelected: (v) {
-            setState(() => _onlyNew = true);
-            _load();
-          },
+      ),
+      // Один Wrap на все кнопки: на узком окне он переносит ряд, а Row
+      // упёрся бы в переполнение
+      Padding(
+        padding: const EdgeInsets.fromLTRB(24, 10, 24, 10),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            for (final p in AdminPeriod.values)
+              _chip(p.label, _period == p, () => _apply(() => _period = p)),
+            _divider(),
+            for (final s in _Status.values)
+              _chip(s.label, _status == s, () => _apply(() => _status = s)),
+            _divider(),
+            for (final t in _Type.values)
+              _chip(t.label, _type == t, () => _apply(() => _type = t)),
+            if (_filtered)
+              TextButton(
+                onPressed: _reset,
+                child: const Text(
+                  'Сбросить',
+                  style: TextStyle(color: Colors.white54, fontSize: 13),
+                ),
+              ),
+          ],
         ),
-        const SizedBox(width: 8),
-        ChoiceChip(
-          label: const Text('Все'),
-          selected: !_onlyNew,
-          onSelected: (v) {
-            setState(() => _onlyNew = false);
-            _load();
-          },
-        ),
-        const Spacer(),
-        IconButton(
-          tooltip: 'Обновить',
-          onPressed: _load,
-          icon: const Icon(Icons.refresh, color: Colors.white54),
-        ),
-      ],
-    ),
+      ),
+    ],
   );
+
+  Widget _chip(String label, bool selected, VoidCallback onTap) => ChoiceChip(
+    label: Text(label),
+    selected: selected,
+    onSelected: (_) => onTap(),
+  );
+
+  /// Полоска между группами: после переноса ряда видно, где кончается
+  /// одна группа и начинается другая
+  Widget _divider() => Container(width: 1, height: 24, color: Colors.white24);
+
+  /// Чем сейчас сужен список — строкой, чтобы объяснить пустой экран
+  String get _filterLine => [
+    if (_period != AdminPeriod.all) _period.label,
+    if (_status != _Status.fresh) _status.label,
+    if (_type != _Type.any) _type.label,
+  ].join(' · ');
 
   Widget _body() {
     if (_loading) {
@@ -181,23 +293,57 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
       );
     }
     if (_orders.isEmpty) {
-      return const Center(
+      return Center(
         child: Padding(
-          padding: EdgeInsets.all(40),
-          child: Text(
-            'Заказов пока нет.\nКнопка заказа появляется у гостя, когда в '
-            'настройках филиала указан WhatsApp.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white38, fontSize: 15),
+          padding: const EdgeInsets.all(40),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _filtered
+                    ? 'Под этот отбор заказов нет.'
+                    : 'Новых заказов нет.\nКнопка заказа появляется у гостя, '
+                          'когда в настройках филиала указан WhatsApp.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white38, fontSize: 15),
+              ),
+              // Здесь кафе и застревает, поэтому сброс — прямо тут, а не
+              // только наверху
+              if (_filtered) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _filterLine,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white24, fontSize: 13),
+                ),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: _reset,
+                  child: const Text('Вернуться к новым'),
+                ),
+              ],
+            ],
           ),
         ),
       );
     }
+    // Уперлись в предел — сказать об этом прямо: иначе «Показано: 100»
+    // выглядит как итог, а это окно
+    final capped = _orders.length == _limit;
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(24, 10, 24, 40),
-      itemCount: _orders.length,
+      itemCount: _orders.length + (capped ? 1 : 0),
       separatorBuilder: (_, _) => const SizedBox(height: 12),
-      itemBuilder: (context, i) => _card(_orders[i]),
+      itemBuilder: (context, i) => i < _orders.length
+          ? _card(_orders[i])
+          : const Padding(
+              padding: EdgeInsets.only(top: 10),
+              child: Text(
+                'Показаны последние $_limit — уточните период или отметку.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white24, fontSize: 13),
+              ),
+            ),
     );
   }
 

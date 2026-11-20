@@ -421,6 +421,99 @@ Future<void> main() async {
       untouched,
     );
 
+    // --- Отбор в списке заказов: период, отметка, способ получения ---
+    // Свои строки с явным временем: заказы, отправленные выше, счёт не
+    // путают — у них свои коды
+    void seedOrder(String id, String type, String status, int daysAgo) {
+      db.execute(
+        "insert into orders (id, branch_id, code, order_type, guest_name, "
+        "guest_phone, status, created_at) values (?, ?, ?, ?, 'Гость', "
+        "'0555112233', ?, datetime('now', ?))",
+        [id, _branchId, id, type, status, '-$daysAgo days'],
+      );
+    }
+
+    db.execute("delete from orders where branch_id = '$_branchId'");
+    seedOrder('o1', 'delivery', 'new', 0);
+    seedOrder('o2', 'pickup', 'new', 0);
+    seedOrder('o3', 'delivery', 'done', 3);
+    seedOrder('o4', 'pickup', 'done', 20);
+
+    Future<List<String>> orderIds(String query) async {
+      final (c, rows) = await admin(
+        'GET',
+        '/api/admin/orders?branch_id=$_branchId&limit=200&$query',
+        mine,
+      );
+      if (c != 200) return ['код $c'];
+      return (rows as List).map((r) => (r as Map)['id'] as String).toList()
+        ..sort();
+    }
+
+    Future<int> orderCode(String query) async {
+      final (c, _) = await admin(
+        'GET',
+        '/api/admin/orders?branch_id=$_branchId&$query',
+        mine,
+      );
+      return c;
+    }
+
+    expect(
+      'способ получения: только доставка',
+      (await orderIds('order_type=delivery')).join(',') == 'o1,o3',
+      await orderIds('order_type=delivery'),
+    );
+    expect(
+      'только самовывоз',
+      (await orderIds('order_type=pickup')).join(',') == 'o2,o4',
+      await orderIds('order_type=pickup'),
+    );
+    expect(
+      'неизвестный способ — 400',
+      await orderCode('order_type=телепорт') == 400,
+    );
+    expect(
+      'пустой способ — отбора нет',
+      (await orderIds('order_type=')).length == 4,
+    );
+    expect(
+      'пустая отметка — отбора нет',
+      (await orderIds('status=')).length == 4,
+    );
+
+    final dayAgo = db
+        .select("select datetime('now', '-1 days') t")
+        .first['t'] as String;
+    expect(
+      'период отсекает старые заказы',
+      (await orderIds('since=$dayAgo')).join(',') == 'o1,o2',
+      await orderIds('since=$dayAgo'),
+    );
+    expect(
+      'период, отметка и способ сужают вместе',
+      (await orderIds('since=${db.select("select datetime('now','-5 days') t").first['t']}'
+              '&status=done&order_type=delivery'))
+              .join(',') ==
+          'o3',
+      await orderIds('status=done&order_type=delivery'),
+    );
+    for (final bad in ['вчера', "' or '1'='1"]) {
+      expect('since=«$bad» в заказах — 400', await orderCode('since=$bad') == 400);
+    }
+
+    final (_, narrowOrders) = await admin(
+      'GET',
+      '/api/admin/orders?branch_id=$_branchId&order_type=pickup&limit=1',
+      mine,
+    );
+    expect(
+      'предел режет отобранное, а не наоборот',
+      (narrowOrders as List).length == 1 &&
+          (narrowOrders.first as Map)['order_type'] == 'pickup',
+      narrowOrders,
+    );
+
     // --- Право на заказы: выдаёт владелец платформы, каждому филиалу своё ---
     db.execute(
       "insert into users (id, login, password_hash, role) values "

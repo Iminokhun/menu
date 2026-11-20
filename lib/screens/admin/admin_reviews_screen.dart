@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../api/api_client.dart';
 import '../../config/current_branch.dart';
+import 'admin_filters.dart';
 import '../../widgets/star_rating.dart';
 
 /// Отзывы, оставленные гостями на сайте.
@@ -13,18 +14,6 @@ import '../../widgets/star_rating.dart';
 /// Править и удалять отзыв нельзя — в нём нечего менять, а кафе, которое
 /// стирает плохие отзывы, обманывает само себя. Старые уходят сами через
 /// 40 дней, и об этом сказано прямо под списком.
-/// Период отбора. Границу считает экран и присылает серверу готовой:
-/// «сегодня» — это сегодня по часам того, кто смотрит.
-enum _Period {
-  today('Сегодня'),
-  week('7 дней'),
-  month('30 дней'),
-  all('За всё время');
-
-  const _Period(this.label);
-  final String label;
-}
-
 /// Корзина оценок. «Плохие» в прежнем виде — это ровно `max_rating=2`,
 /// поэтому старый клиент продолжает работать без правок.
 enum _Bucket {
@@ -68,7 +57,7 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
   /// Отбор. Сервер считает все три: выборка ограничена сотней строк, и
   /// отзывы за сегодня, плохие или про одного официанта иначе могли бы в
   /// неё не попасть — а ради них этот экран и открывают
-  _Period _period = _Period.all;
+  AdminPeriod _period = AdminPeriod.all;
   _Bucket _bucket = _Bucket.any;
   String? _waiter;
 
@@ -78,7 +67,7 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
   List<Map<String, dynamic>> _waiters = const [];
 
   bool get _filtered =>
-      _period != _Period.all || _bucket != _Bucket.any || _waiter != null;
+      _period != AdminPeriod.all || _bucket != _Bucket.any || _waiter != null;
 
   /// Сколько строк просим. Больше двух сотен карточек никто не читает, а
   /// ждать дольше — читают ещё меньше
@@ -139,31 +128,10 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
   }
 
   void _reset() => _apply(() {
-    _period = _Period.all;
+    _period = AdminPeriod.all;
     _bucket = _Bucket.any;
     _waiter = null;
   });
-
-  /// Нижняя граница периода в том виде, в каком SQLite пишет `created_at`,
-  /// то есть в UTC. Полночь берём местную: «сегодня» для кафе — это его
-  /// сегодня, а часового пояса кафе сервер не знает.
-  String? _since() {
-    final days = switch (_period) {
-      _Period.today => 1,
-      _Period.week => 7,
-      _Period.month => 30,
-      _Period.all => 0,
-    };
-    if (days == 0) return null;
-    final now = DateTime.now();
-    // Нормализация через конструктор, а не вычитание Duration: второе
-    // сдвигает на час на переходе времени. «7 дней» — сегодня и шесть
-    // предыдущих, иначе выборка на сутки шире подписи
-    final start = DateTime(now.year, now.month, now.day - (days - 1)).toUtc();
-    String two(int v) => v.toString().padLeft(2, '0');
-    return '${start.year}-${two(start.month)}-${two(start.day)} '
-        '${two(start.hour)}:${two(start.minute)}:${two(start.second)}';
-  }
 
   Future<void> _load() async {
     final branch = currentBranch.value;
@@ -175,7 +143,7 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
     _busy = true;
     final gen = ++_gen;
     try {
-      final since = _since();
+      final since = sinceFor(_period);
       final rows = await api.list('/api/admin/reviews', {
         'branch_id': branch.id,
         if (since != null) 'since': since,
@@ -212,7 +180,7 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
     final branch = currentBranch.value;
     if (branch == null) return;
     try {
-      final since = _since();
+      final since = sinceFor(_period);
       final rows = await api.list('/api/admin/reviews/waiters', {
         'branch_id': branch.id,
         if (since != null) 'since': since,
@@ -291,7 +259,7 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
           runSpacing: 8,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            for (final p in _Period.values)
+            for (final p in AdminPeriod.values)
               _chip(p.label, _period == p, () => _apply(() {
                 _period = p;
                 // Период меняет и набор имён: уволившийся месяц назад не
@@ -371,7 +339,7 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
 
   /// Чем сейчас сужен список — строкой, чтобы объяснить пустой экран
   String get _filterLine => [
-    if (_period != _Period.all) _period.label,
+    if (_period != AdminPeriod.all) _period.label,
     if (_bucket != _Bucket.any) 'оценка ${_bucket.label}',
     if (_waiter != null) _waiter!,
   ].join(' · ');

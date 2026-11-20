@@ -1800,16 +1800,34 @@ class Api {
     final u = _cafeAdmin(req);
     final q = req.url.queryParameters;
     final branch = _ownBranch(u, q['branch_id']);
+    // Весь отбор считает сервер, а не экран: выборка ограничена сотней
+    // строк, и заказы за сегодня или только самовывоз иначе могли бы в неё
+    // не попасть
     final status = q['status'];
-    if (status != null && status != 'new' && status != 'done') {
+    if (status != null && status.isNotEmpty &&
+        status != 'new' && status != 'done') {
       throw ApiError(400, 'Неизвестная отметка заказа');
+    }
+    final type = q['order_type'];
+    if (type != null && type.isNotEmpty &&
+        type != 'delivery' && type != 'pickup') {
+      throw ApiError(400, 'Неизвестный способ получения заказа');
     }
     final before = q['before'];
     final where = StringBuffer('branch_id = ?');
     final args = <Object?>[branch['id']];
-    if (status != null) {
+    if (status != null && status.isNotEmpty) {
       where.write(' and status = ?');
       args.add(status);
+    }
+    if (type != null && type.isNotEmpty) {
+      where.write(' and order_type = ?');
+      args.add(type);
+    }
+    final since = q['since'];
+    if (since != null && since.isNotEmpty) {
+      where.write(' and created_at >= ?');
+      args.add(_sinceParam(since));
     }
     if (before != null && before.isNotEmpty) {
       where.write(' and created_at < ?');
