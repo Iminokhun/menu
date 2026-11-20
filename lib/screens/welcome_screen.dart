@@ -329,21 +329,30 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     );
   }
 
-  /// Переключатель языков — своей строкой под названием кафе, у левого
-  /// края. Отступ сверху живёт внутри: у филиала с единственным языком
-  /// переключателя нет вовсе, и пустой строки от него не остаётся.
+  /// Всё, что стоит под названием кафе: языки, поиск, обновление и
+  /// «Оставить отзыв» — одной лентой у левого края.
   ///
-  /// Условие то же, что внутри самого LangSwitcher, — иначе отступ
-  /// пришлось бы ставить снаружи и он остался бы висеть
-  Widget _langUnderName(ThemeConfig config) {
-    if ((currentBranch.value?.languages.length ?? 1) < 2) {
-      return const SizedBox.shrink();
-    }
-    return Padding(
-      padding: const EdgeInsets.only(top: 12),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: LangSwitcher(config: config),
+  /// Wrap, а не Row: ряд переключателя растёт вместе с числом языков (до
+  /// четырёх он показывает их кнопками подряд), и на пятом языке он
+  /// становится одной кнопкой со списком. Что бы филиалу ни добавили,
+  /// кнопки переносятся на вторую строку, а не вылезают за край.
+  ///
+  /// Align, а не голый Wrap: Wrap сам по себе ужимается до ширины самой
+  /// длинной строки, и в боковой панели, где всё выровнено по центру,
+  /// лента встала бы посередине
+  Widget _underNameBar(ThemeConfig config) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 4,
+        runSpacing: 4,
+        children: [
+          LangSwitcher(config: config),
+          _searchButton(config),
+          _refreshButton(config),
+          _reviewButton(config),
+        ],
       ),
     );
   }
@@ -525,21 +534,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
             ),
           ),
 
-          _langUnderName(config),
+          const SizedBox(height: 16),
 
-          const SizedBox(height: 20),
-          // Wrap, а не Row: в узкой боковой панели кнопки переносятся на
-          // вторую строку, а не вылезают за край
-          Wrap(
-            alignment: WrapAlignment.center,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 4,
-            children: [
-              _searchButton(config),
-              _refreshButton(config),
-              _reviewButton(config),
-            ],
-          ),
+          _underNameBar(config),
           _offlineNote(config),
 
           const Spacer(),
@@ -655,24 +652,10 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
           const SizedBox(height: 12),
 
-          // Языки слева, поиск с обновлением справа — в одной строке под
-          // названием: отдельный ярус только ради переключателя съедает
-          // на телефоне верх первой строки блюд
-          Row(
-            children: [
-              LangSwitcher(config: config),
-              const Spacer(),
-              _searchButton(config),
-              _refreshButton(config),
-            ],
-          ),
-          // Своей строкой, а не шестой иконкой в ряду выше: на узком
-          // телефоне он и так впритык, а подпись у этой кнопки нужна —
-          // одну звезду приняли бы за оценку, а не за «оставить отзыв»
-          Align(
-            alignment: Alignment.centerRight,
-            child: _reviewButton(config),
-          ),
+          // «Оставить отзыв» с подписью в эту строку на телефоне не
+          // влезает и переносится на вторую сам — ровно там, где он и
+          // стоял раньше, но теперь это решает ширина, а не вёрстка
+          _underNameBar(config),
           _offlineNote(config),
         ],
       ),
