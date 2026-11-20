@@ -110,6 +110,20 @@ void main() {
     expect(sender.last?.comment, 'Всё понравилось');
   });
 
+  testWidgets('в номер стола буквы не вводятся', (tester) async {
+    final sender = _FakeSender();
+    await _open(tester, sender);
+
+    await _tapStar(tester, 4);
+    // Гость пытается вписать «VIP-2»: в поле останутся только цифры
+    await tester.enterText(find.byType(TextField).at(1), 'VIP-2');
+    await tester.pump();
+    await tester.tap(find.byType(ElevatedButton));
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(sender.last?.tableNo, '2');
+  });
+
   testWidgets('после отправки — спасибо, и никакого WhatsApp', (
     tester,
   ) async {

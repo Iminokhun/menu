@@ -181,6 +181,28 @@ Future<void> main() async {
     );
     expect('одни звёзды, без полей — принято', status == 201, status);
 
+    // --- Номер стола: только цифры ---
+    for (final bad in ['VIP-2', 'терраса', '12А', '1,2', '12345', '1\n2']) {
+      (status, _) = await post(_review(tableNo: bad));
+      expect('стол «$bad» — отказ', status == 400, status);
+    }
+    (status, _) = await post(_review(tableNo: '', comment: 'без стола'));
+    expect('стол можно не указывать', status == 201, status);
+    (status, _) = await post(_review(tableNo: '1024', comment: 'большой зал'));
+    expect('четыре цифры — принято', status == 201, status);
+    (status, _) = await post(_review(tableNo: ' 3 ', comment: 'с пробелами'));
+    expect(
+      'пробелы по краям срезаются, а не считаются буквами',
+      status == 201 &&
+          db
+                  .select(
+                    "select table_no from reviews where comment = 'с пробелами'",
+                  )
+                  .first['table_no'] ==
+              '3',
+      status,
+    );
+
     // --- Филиал ---
     (status, _) = await post(_review(branchId: 'нет-такого'));
     expect('несуществующий филиал — 404', status == 404, status);
@@ -195,16 +217,16 @@ Future<void> main() async {
     (status, _) = await post(_review(comment: 'я' * 1000, tableNo: '7'));
     expect('ровно 1000 знаков — принято', status == 201, status);
     (status, _) = await post(
-      _review(waiter: 'Ай\nгуль​', tableNo: 'стол\r\n5', comment: 'ок'),
+      _review(waiter: 'Ай\nгуль​', tableNo: '5', comment: 'ок'),
     );
     final lines = db
         .select("select waiter, table_no from reviews where comment = 'ок'")
         .first;
     expect(
-      'переносы строк в имени и столе схлопнуты, невидимое вырезано',
+      'перенос строки в имени схлопнут, невидимое вырезано',
       status == 201 &&
           lines['waiter'] == 'Ай гуль' &&
-          lines['table_no'] == 'стол 5',
+          lines['table_no'] == '5',
       lines,
     );
 
@@ -437,21 +459,27 @@ Future<void> main() async {
     // Все значения уходят отдельными параметрами (`?`), поэтому кавычки и
     // точка с запятой в имени официанта — это просто буквы
     const drop = "'); drop table reviews; --";
-    const quotes = '" OR 1=1 --';
     (status, body) = await post(
-      _review(waiter: drop, tableNo: quotes, comment: "О'Коннор; select 1"),
+      _review(waiter: drop, tableNo: '8', comment: "О'Коннор; select 1"),
     );
-    expect('отзыв с кавычками и «drop table» принят', status == 201, '$status $body');
+    expect(
+      'отзыв с кавычками и «drop table» принят',
+      status == 201,
+      '$status $body',
+    );
     final tricky = db
         .select("select * from reviews where waiter = ?", [drop])
         .first;
     expect(
       'текст сохранён буква в букву, ничего не выполнилось',
       tricky['waiter'] == drop &&
-          tricky['table_no'] == quotes &&
           tricky['comment'] == "О'Коннор; select 1",
       tricky,
     );
+    // В стол внедрять нечего: там только цифры, и проверка отбивает это
+    // раньше базы
+    (status, _) = await post(_review(tableNo: "1' OR '1'='1"));
+    expect('внедрение в номер стола — отказ', status == 400, status);
     expect(
       'таблица reviews на месте',
       db

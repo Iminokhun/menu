@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../l10n/app_localizations.dart';
@@ -171,7 +172,10 @@ class _ReviewDialogState extends State<ReviewDialog> {
         _table,
         l.reviewTable,
         icon: Icons.table_restaurant_outlined,
-        maxLength: 20,
+        maxLength: 4,
+        // Только цифры: на телефоне сразу открывается цифровая клавиатура,
+        // а буквы в поле просто не вводятся
+        digitsOnly: true,
       ),
       _field(
         config,
@@ -209,11 +213,19 @@ class _ReviewDialogState extends State<ReviewDialog> {
     required IconData icon,
     int? maxLength,
     int lines = 1,
+    bool digitsOnly = false,
   }) => Padding(
     padding: const EdgeInsets.only(bottom: 14),
     child: TextField(
       controller: controller,
-      keyboardType: lines > 1 ? TextInputType.multiline : TextInputType.text,
+      keyboardType: digitsOnly
+          ? TextInputType.number
+          : lines > 1
+          ? TextInputType.multiline
+          : TextInputType.text,
+      inputFormatters: digitsOnly
+          ? [FilteringTextInputFormatter.digitsOnly]
+          : null,
       textCapitalization: TextCapitalization.sentences,
       minLines: lines,
       // Многострочное поле растёт, а не прокручивается внутри себя.
