@@ -99,13 +99,9 @@ create table if not exists branches (
   -- принимать некому. Пока право не выдано, номер WhatsApp гостю не
   -- показывается и заказы не принимаются, даже если номер заполнен.
   orders_enabled integer not null default 0,
-  -- Куда уходят отзывы гостей. НЕ тот номер, что для заказов: жалоба на
-  -- официанта не должна попадать на телефон кухни, где эти же официанты и
-  -- стоят. Пусто — отзыв просто сохраняется на сервере
-  review_whatsapp text  not null default '',
-  -- Право принимать отзывы. Выдаёт только superadmin, каждому филиалу своё —
-  -- как orders_enabled. Но, в отличие от заказов, пустой номер право не
-  -- отменяет: кнопка у гостя есть и без WhatsApp
+  -- Право принимать отзывы. Выдаёт только superadmin, каждому филиалу
+  -- своё — как orders_enabled. Отзыв никуда не пересылается: он просто
+  -- ложится сюда, и кафе читает его в своей админке
   reviews_enabled integer not null default 0,
   is_active  integer not null default 1,
   sort_order integer not null default 0
@@ -318,20 +314,19 @@ void _migrate(Database db) {
     db.execute('alter table cafes drop column orders_enabled');
   }
 
-  // Отзывы гостей: право и номер WhatsApp. Обе колонки появились разом,
-  // поэтому и проверка по одной. Право не включается задним числом никому:
-  // это отдельная услуга, которую владелец платформы выдаёт сам
+  // Право принимать отзывы. Не включается задним числом никому: это
+  // отдельная услуга, которую владелец платформы выдаёт сам
   if (!branchCols.contains('reviews_enabled')) {
-    inTransaction(db, () {
-      db.execute(
-        'alter table branches add column reviews_enabled integer not null '
-        'default 0',
-      );
-      db.execute(
-        "alter table branches add column review_whatsapp text not null "
-        "default ''",
-      );
-    });
+    db.execute(
+      'alter table branches add column reviews_enabled integer not null '
+      'default 0',
+    );
+  }
+  // Отзыв больше никуда не пересылается, только сохраняется. Номер для
+  // пересылки убираем: колонка, которую никто не читает, через полгода
+  // выглядит как настройка, которая «почему-то не работает»
+  if (branchCols.contains('review_whatsapp')) {
+    db.execute('alter table branches drop column review_whatsapp');
   }
 
   // Языки меню. Раньше их было три постоянных — филиалы, заведённые тогда,

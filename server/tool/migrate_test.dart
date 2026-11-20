@@ -269,22 +269,25 @@ void main() {
         .map((r) => r['name'])
         .toSet();
     expect(
-      'у филиала появились reviews_enabled и review_whatsapp',
-      reviewCols.contains('reviews_enabled') &&
-          reviewCols.contains('review_whatsapp'),
+      'у филиала появилось право reviews_enabled',
+      reviewCols.contains('reviews_enabled'),
       reviewCols,
     );
     expect(
-      'у старых филиалов отзывы выключены, номер пуст',
+      'и у старых филиалов отзывы выключены',
       db
-              .select('select count(*) n from branches where '
-                  "reviews_enabled = 0 and review_whatsapp = ''")
+              .select('select count(*) n from branches where reviews_enabled = 0')
               .first['n'] ==
           db.select('select count(*) n from branches').first['n'],
       db
-          .select('select id, reviews_enabled, review_whatsapp from branches')
+          .select('select id, reviews_enabled from branches')
           .map((r) => r)
           .toList(),
+    );
+    expect(
+      'номера для пересылки отзывов нет — отзыв никуда не пересылается',
+      !reviewCols.contains('review_whatsapp'),
+      reviewCols,
     );
     db.close();
 

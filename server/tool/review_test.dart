@@ -1,5 +1,5 @@
-// Проверка отзывов гостей: право выдаётся филиалу, номер WhatsApp на приём
-// не влияет, чужое недоступно, старое удаляется само.
+// Проверка отзывов гостей: право выдаётся филиалу, отзыв никуда не
+// пересылается, чужое недоступно, старое удаляется само.
 // Запуск: dart run tool/review_test.dart
 import 'dart:convert';
 import 'dart:io';
@@ -18,12 +18,11 @@ void expect(String what, bool ok, [Object? info]) {
   if (!ok) failures++;
 }
 
-/// Филиал с правом и с номером WhatsApp
+/// Филиал с правом на отзывы
 const _branchId = 'branch-1';
 
-/// Филиал того же кафе с правом, но **без номера**. Главное отличие отзывов
-/// от заказов: отзыв он всё равно принимает, просто не дублируется в WhatsApp
-const _noPhoneId = 'branch-2';
+/// Второй филиал того же кафе, тоже с правом
+const _secondId = 'branch-2';
 
 /// Филиал того же кафе без права: право у каждого филиала своё
 const _noRightId = 'branch-3';
@@ -41,17 +40,16 @@ void _seed(Database db) {
     "values ('cafe-2', 'Чужое', 1, 5, 'lifetime', '')",
   );
   db.execute(
-    "insert into branches (id, cafe_id, slug, name, review_whatsapp, "
-    "reviews_enabled) values "
-    "('$_branchId', 'cafe-1', 'center', 'Центр', '996555112233', 1)",
+    "insert into branches (id, cafe_id, slug, name, reviews_enabled) values "
+    "('$_branchId', 'cafe-1', 'center', 'Центр', 1)",
   );
   db.execute(
     "insert into branches (id, cafe_id, slug, name, reviews_enabled) values "
-    "('$_noPhoneId', 'cafe-1', 'second', 'Второй', 1)",
+    "('$_secondId', 'cafe-1', 'second', 'Второй', 1)",
   );
   db.execute(
-    "insert into branches (id, cafe_id, slug, name, review_whatsapp) values "
-    "('$_noRightId', 'cafe-1', 'third', 'Третий', '996555112233')",
+    "insert into branches (id, cafe_id, slug, name) values "
+    "('$_noRightId', 'cafe-1', 'third', 'Третий')",
   );
   db.execute(
     "insert into branches (id, cafe_id, slug, name, reviews_enabled) values "
@@ -156,11 +154,11 @@ Future<void> main() async {
       body,
     );
 
-    // --- Номер WhatsApp на приём не влияет ---
-    (status, body) = await post(_review(branchId: _noPhoneId));
+    // --- Второй филиал того же кафе принимает свои отзывы ---
+    (status, body) = await post(_review(branchId: _secondId));
     expect(
-      'право есть, номера нет — отзыв всё равно принят',
-      status == 201 && _count(db, _noPhoneId) == 1,
+      'отзыв второму филиалу принят и лёг именно ему',
+      status == 201 && _count(db, _secondId) == 1,
       '$status $body',
     );
 
@@ -410,11 +408,16 @@ Future<void> main() async {
       'reviews_enabled': true,
     });
 
-    // --- Номер виден гостю только вместе с правом ---
+    // --- Гостю видно только само право ---
     var (pub, pubBody) = await get('/api/public/branch/center');
     expect(
-      'есть право — гость видит номер для отзывов',
-      pub == 200 && (pubBody as Map)['review_whatsapp'] == '996555112233',
+      'есть право — гость знает, что кнопка должна быть',
+      pub == 200 && (pubBody as Map)['reviews_enabled'] == true,
+      pubBody,
+    );
+    expect(
+      'номера для пересылки в выдаче нет вовсе',
+      !(pubBody as Map).containsKey('review_whatsapp'),
       pubBody,
     );
     await admin('PATCH', '/api/super/branches/$_branchId', boss, {
@@ -422,15 +425,8 @@ Future<void> main() async {
     });
     (pub, pubBody) = await get('/api/public/branch/center');
     expect(
-      'нет права — номера гостю нет, а в базе он цел',
-      (pubBody as Map)['review_whatsapp'] == '' &&
-          (pubBody)['reviews_enabled'] == false &&
-          db
-                  .select('select review_whatsapp from branches where id = ?', [
-                    _branchId,
-                  ])
-                  .first['review_whatsapp'] ==
-              '996555112233',
+      'нет права — кнопки у гостя нет',
+      (pubBody as Map)['reviews_enabled'] == false,
       pubBody,
     );
     await admin('PATCH', '/api/super/branches/$_branchId', boss, {
@@ -522,10 +518,10 @@ Future<void> main() async {
 
     // --- Удаление филиала уносит его отзывы ---
     final kept = _count(db, _branchId);
-    db.execute("delete from branches where id = '$_noPhoneId'");
+    db.execute("delete from branches where id = '$_secondId'");
     expect(
       'отзывы удалённого филиала ушли с ним, чужие целы',
-      _count(db, _noPhoneId) == 0 && _count(db, _branchId) == kept,
+      _count(db, _secondId) == 0 && _count(db, _branchId) == kept,
     );
 
     // --- Пределы частоты ---

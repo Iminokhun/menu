@@ -1,63 +1,61 @@
-/// Отправка отзыва: ссылка в WhatsApp и запись на сервере.
+/// Отправка отзыва: только запись на сервер.
 ///
-/// В отличие от заказа (`order_delivery.dart`), здесь один класс без
-/// наследников: развилка всего одна — есть у филиала номер WhatsApp или нет,
-/// и ради неё заводить иерархию незачем.
+/// В WhatsApp отзыв не пересылается — гость ничего не открывает и никуда
+/// не уходит со страницы. Кафе читает отзывы в своей админке, в разделе
+/// «Отзывы». Это заодно убирает две беды пересылки ссылкой: гость мог
+/// поправить текст перед отправкой, а мог и вовсе её не отправить.
 library;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 import '../api/api_client.dart';
 import '../models/branch.dart';
-import '../open_link.dart';
-import 'review_message.dart';
+
+/// Отзыв, который заполнил гость. Пустые поля — обычное дело: обязательна
+/// только оценка.
+class ReviewDraft {
+  final int rating;
+  final String waiter;
+  final String tableNo;
+  final String comment;
+
+  const ReviewDraft({
+    required this.rating,
+    this.waiter = '',
+    this.tableNo = '',
+    this.comment = '',
+  });
+
+  /// Тело запроса `POST /api/public/reviews`. Имена полей — как в базе.
+  Map<String, Object?> toJson(String branchId, String lang) => {
+    'branch_id': branchId,
+    'rating': rating,
+    'waiter': waiter,
+    'table_no': tableNo,
+    'comment': comment,
+    'lang': lang,
+  };
+}
 
 class ReviewSender {
-  /// Номер, куда уходит отзыв. Пусто — WhatsApp не открывается, отзыв
-  /// просто сохраняется на сервере.
-  final String phone;
-
   /// Можно ли вообще оставить отзыв в этом филиале.
   final bool canReview;
 
-  const ReviewSender({required this.canReview, this.phone = ''});
-
-  bool get opensWhatsapp => phone.isNotEmpty;
+  const ReviewSender({required this.canReview});
 
   /// Кнопка отзыва показывается, только когда это браузер и право выдано.
   ///
-  /// Вне браузера `openLink` — заглушка (`open_link_io.dart`), а на планшете
-  /// в зале отзыв о собственном официанте оставлять некому. Номер в условие
-  /// **не входит**, и это не упущение: без номера отзыв всё равно уходит на
-  /// сервер и кафе видит его в своей админке.
-  static ReviewSender forBranch(Branch? branch) {
-    if (branch == null || !kIsWeb || !branch.reviewsEnabled) {
-      return const ReviewSender(canReview: false);
-    }
-    return ReviewSender(
-      canReview: true,
-      phone: branch.canSendReviewToWhatsapp ? branch.reviewWhatsapp : '',
-    );
-  }
-
-  /// Ссылка на переписку с уже набранным отзывом — её же можно открыть
-  /// повторно, если окно у гостя заблокировалось. Нет номера — нет ссылки.
-  String? linkFor(ReviewDraft draft, Branch branch) =>
-      opensWhatsapp ? reviewLink(draft, branch: branch) : null;
+  /// Вне браузера — планшет в зале, где отзыв о собственном официанте
+  /// оставлять некому.
+  static ReviewSender forBranch(Branch? branch) =>
+      ReviewSender(canReview: branch != null && kIsWeb && branch.reviewsEnabled);
 
   /// Отправить отзыв. Возвращает `true`, если он сохранён на сервере.
-  ///
-  /// ВАЖНО: до `openLink` не должно быть ни одного `await` — браузер
-  /// открывает новую вкладку только внутри жеста гостя. Поэтому ссылка
-  /// открывается первой строкой, а вызывающий код не ждёт этот Future.
   Future<bool> submit(
     ReviewDraft draft, {
     required Branch branch,
     required String lang,
   }) async {
-    final link = linkFor(draft, branch);
-    if (link != null) openLink(link);
-
     try {
       await api.post('/api/public/reviews', draft.toJson(branch.id, lang));
       return true;

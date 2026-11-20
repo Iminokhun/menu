@@ -656,11 +656,10 @@ class _SuperAdminShellState extends State<SuperAdminShell> {
   /// услуги, которые выдаём мы, и каждому филиалу свои: у кафе бывает
   /// точка с доставкой и точка, где заказы принимать некому.
   ///
-  /// Номера WhatsApp вписывает само кафе у себя, поэтому «право выдано, а
-  /// номера нет» — обычное состояние, а не поломка. Говорим об этом прямо:
-  /// иначе кафе скажет «не работает», а искать будет нечего. У заказов без
-  /// номера не работает ничего, у отзывов — только пересылка в WhatsApp,
-  /// поэтому цвета у них разные.
+  /// Номер WhatsApp для заказов вписывает само кафе у себя, поэтому «право
+  /// выдано, а номера нет» — обычное состояние, а не поломка. Говорим об
+  /// этом прямо: иначе кафе скажет «не работает», а искать будет нечего.
+  /// Отзывам номер не нужен — они просто ложатся в админку кафе.
   ///
   /// Оба права — за одной кнопкой меню, а не двумя кнопками в строке:
   /// прав со временем станет больше, а ширина строки — нет.
@@ -668,18 +667,13 @@ class _SuperAdminShellState extends State<SuperAdminShell> {
     final orders = b['orders_enabled'] == true;
     final ordersPhone = ((b['order_whatsapp'] as String?) ?? '').isNotEmpty;
     final reviews = b['reviews_enabled'] == true;
-    final reviewsPhone = ((b['review_whatsapp'] as String?) ?? '').isNotEmpty;
 
     final ordersColor = !orders
         ? Colors.white38
         : ordersPhone
             ? Colors.green
             : Colors.orangeAccent;
-    final reviewsColor = !reviews
-        ? Colors.white38
-        : reviewsPhone
-            ? Colors.green
-            : Colors.amberAccent;
+    final reviewsColor = reviews ? Colors.green : Colors.white38;
     final state = [
       if (b['is_active'] != true) 'филиал выключен',
       !orders
@@ -687,11 +681,7 @@ class _SuperAdminShellState extends State<SuperAdminShell> {
           : ordersPhone
               ? 'заказы принимает'
               : 'заказы: кафе не вписало номер',
-      !reviews
-          ? 'отзывы не подключены'
-          : reviewsPhone
-              ? 'отзывы принимает'
-              : 'отзывы: только в админке, без WhatsApp',
+      reviews ? 'отзывы принимает' : 'отзывы не подключены',
     ].join(' · ');
 
     return Padding(

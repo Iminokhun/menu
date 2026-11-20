@@ -33,7 +33,6 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
   final _hoursCtrl = TextEditingController();
   final _slugCtrl = TextEditingController();
   final _orderWaCtrl = TextEditingController();
-  final _reviewWaCtrl = TextEditingController();
   final _deliveryPriceCtrl = TextEditingController();
   /// Ссылка QR, которая сейчас записана у филиала
   String _savedQrUrl = '';
@@ -107,7 +106,6 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
     _hoursCtrl.dispose();
     _slugCtrl.dispose();
     _orderWaCtrl.dispose();
-    _reviewWaCtrl.dispose();
     _deliveryPriceCtrl.dispose();
     super.dispose();
   }
@@ -153,7 +151,6 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
         _orderWaCtrl.text = (data['order_whatsapp'] as String?) ?? '';
         _countryCode = (data['default_country_code'] as String?) ?? '';
         _ordersAllowed = data['orders_enabled'] == true;
-        _reviewWaCtrl.text = (data['review_whatsapp'] as String?) ?? '';
         _reviewsAllowed = data['reviews_enabled'] == true;
         _deliveryPriceCtrl.text = _money(jsonDouble(data['delivery_price']));
         _logoUrl = (data['logo_url'] as String?) ?? '';
@@ -203,14 +200,6 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
       );
       return;
     }
-    final reviewWa = _reviewWhatsapp;
-    if (reviewWa == null) {
-      _toast(
-        'Проверьте номер WhatsApp для отзывов: нужны цифры с кодом страны',
-        isError: true,
-      );
-      return;
-    }
     final deliveryPrice = _deliveryPrice;
     if (deliveryPrice == null) {
       _toast('Стоимость доставки: введите число от 0', isError: true);
@@ -231,7 +220,6 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
         'qr_url': _qrLink ?? _savedQrUrl,
         'order_whatsapp': orderWa,
         'delivery_price': deliveryPrice,
-        'review_whatsapp': reviewWa,
       });
 
       // Сервер вернул обновлённую строку — обновляем текущий филиал, чтобы
@@ -885,106 +873,49 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
     );
   }
 
-  /// Куда уходят отзывы гостей.
+  /// Где кафе видит отзывы и почему их может не быть.
   ///
-  /// Номер здесь обычно личный — владельца, а не тот, что принимает
-  /// заказы. Об этом сказано прямо в подсказке: если кафе впишет сюда
-  /// телефон кухни, жалоба на официанта попадёт к официантам, и вся затея
-  /// теряет смысл.
-  Widget _reviewSettings() {
-    final digits = _reviewWhatsapp;
-    final empty = _reviewWaCtrl.text.trim().isEmpty;
-    final sameAsOrders =
-        !empty && digits != null && digits == _orderWhatsapp && digits.isNotEmpty;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Пока право не выдано, кнопки отзыва у гостя нет вовсе. Номер
-        // вписать можно — он дождётся подключения
-        if (!_reviewsAllowed) ...[
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.orangeAccent.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: Colors.orangeAccent.withValues(alpha: 0.4),
-              ),
-            ),
-            child: const Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.lock_outline, color: Colors.orangeAccent, size: 18),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Отзывы у этого филиала пока не подключены. Номер ниже '
-                    'сохранится, но кнопка отзыва у гостей не появится — '
-                    'подключение включают там же, где заводили кафе, и '
-                    'каждому филиалу отдельно.',
-                    style: TextStyle(color: Colors.orangeAccent, fontSize: 13),
-                  ),
-                ),
-              ],
+  /// Настраивать тут нечего: отзыв никуда не пересылается, он сразу
+  /// ложится в раздел «Отзывы». Но сказать об этом надо — иначе кафе не
+  /// узнает, что отзывы вообще есть, и будет гадать, почему у гостей
+  /// нет кнопки.
+  Widget _reviewSettings() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      if (!_reviewsAllowed)
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.orangeAccent.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: Colors.orangeAccent.withValues(alpha: 0.4),
             ),
           ),
-          const SizedBox(height: 14),
-        ],
-        _field(
-          _reviewWaCtrl,
-          'WhatsApp для отзывов',
-          icon: Icons.star_outline_rounded,
-          keyboard: TextInputType.phone,
-          onChanged: (_) => setState(() {}),
-          hint: 'Номер с кодом страны. Пусто — отзывы только в разделе «Отзывы»',
-        ),
-        if (!empty) ...[
-          const SizedBox(height: 6),
-          Row(
+          child: const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Icon(Icons.lock_outline, color: Colors.orangeAccent, size: 18),
+              SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  digits == null
-                      ? 'Проверьте номер: нужны цифры с кодом страны'
-                      : 'Сохранится как: $digits',
-                  style: TextStyle(
-                    color: digits == null ? Colors.orangeAccent : Colors.white38,
-                    fontSize: 12,
-                  ),
+                  'Отзывы у этого филиала пока не подключены — кнопки у '
+                  'гостей нет. Подключение включают там же, где заводили '
+                  'кафе, и каждому филиалу отдельно.',
+                  style: TextStyle(color: Colors.orangeAccent, fontSize: 13),
                 ),
               ),
-              if (digits != null && digits.isNotEmpty && kIsWeb)
-                TextButton(
-                  onPressed: () =>
-                      openLink(waLink(digits, 'Проверка отзывов с сайта')),
-                  child: const Text('Проверить'),
-                ),
             ],
           ),
-        ],
-        if (sameAsOrders) ...[
-          const SizedBox(height: 6),
-          const Text(
-            'Тот же номер, что и для заказов: отзывы увидят те, кто '
-            'принимает заказы.',
-            style: TextStyle(color: Colors.orangeAccent, fontSize: 12),
-          ),
-        ],
-        const SizedBox(height: 10),
+        )
+      else
         const Text(
-          'Обычно сюда вписывают личный номер владельца, а не телефон кухни: '
-          'жалоба на официанта не должна попасть к официантам. Пусто — кнопка '
-          'у гостя всё равно остаётся, отзыв просто ляжет в раздел «Отзывы».',
-          style: TextStyle(color: Colors.white38, fontSize: 12),
+          'Гость ставит оценку и пишет пару слов прямо в меню. Отзывы '
+          'приходят в раздел «Отзывы» и хранятся 40 дней.',
+          style: TextStyle(color: Colors.white38, fontSize: 13),
         ),
-      ],
-    );
-  }
-
-  /// Номер для отзывов в том виде, в каком он сохранится. `null` — не
-  /// распознан; пустая строка — отзывы в WhatsApp не дублируются.
-  String? get _reviewWhatsapp =>
-      normalizeWaPhone(_reviewWaCtrl.text, defaultCountryCode: _countryCode);
+    ],
+  );
 
   /// Номер WhatsApp в том виде, в каком он сохранится. `null` — номер
   /// не распознан; пустая строка — заказы выключены.

@@ -1,9 +1,7 @@
 // Форма отзыва: без оценки отправлять нечего, с оценкой уходит ровно один
-// отзыв, а что видит гость после отправки — зависит от того, был ли номер
-// WhatsApp у филиала.
+// отзыв, и гость при этом никуда со страницы не уходит.
 import 'package:cafe_andalus_menu/l10n/app_localizations.dart';
 import 'package:cafe_andalus_menu/models/branch.dart';
-import 'package:cafe_andalus_menu/review/review_message.dart';
 import 'package:cafe_andalus_menu/review/review_sender.dart';
 import 'package:cafe_andalus_menu/screens/review_dialog.dart';
 import 'package:flutter/material.dart';
@@ -16,7 +14,6 @@ const _branch = Branch(
   id: 'b1',
   slug: 'center',
   name: 'Андалус, Центр',
-  reviewWhatsapp: '996555112233',
   reviewsEnabled: true,
 );
 
@@ -27,7 +24,7 @@ class _FakeSender extends ReviewSender {
   ReviewDraft? last;
   final bool ok;
 
-  _FakeSender({super.phone = '', this.ok = true}) : super(canReview: true);
+  _FakeSender({this.ok = true}) : super(canReview: true);
 
   @override
   Future<bool> submit(
@@ -113,36 +110,21 @@ void main() {
     expect(sender.last?.comment, 'Всё понравилось');
   });
 
-  testWidgets('нет номера: ни WhatsApp, ни кнопки «открыть ещё раз»', (
+  testWidgets('после отправки — спасибо, и никакого WhatsApp', (
     tester,
   ) async {
     final sender = _FakeSender();
     await _open(tester, sender);
 
+    expect(find.text('ОТПРАВИТЬ ОТЗЫВ'), findsOneWidget);
     await _tapStar(tester, 5);
     await tester.tap(find.byType(ElevatedButton));
     await tester.pump(const Duration(seconds: 1));
 
     expect(find.text('Спасибо! Кафе увидит ваш отзыв'), findsOneWidget);
+    // Ни «открыть WhatsApp ещё раз», ни любой другой кнопки, уводящей
+    // гостя со страницы, тут быть не должно
     expect(find.byType(OutlinedButton), findsNothing);
-  });
-
-  testWidgets('есть номер: подсказка про WhatsApp и запасная кнопка', (
-    tester,
-  ) async {
-    final sender = _FakeSender(phone: '996555112233');
-    await _open(tester, sender);
-
-    expect(find.text('ОТПРАВИТЬ В WHATSAPP'), findsOneWidget);
-    await _tapStar(tester, 4);
-    await tester.tap(find.byType(ElevatedButton));
-    await tester.pump(const Duration(seconds: 1));
-
-    expect(
-      find.text('Отзыв готов. Нажмите «Отправить» в WhatsApp'),
-      findsOneWidget,
-    );
-    expect(find.byType(OutlinedButton), findsOneWidget);
   });
 
   testWidgets('сервер не принял — спокойное примечание, не ошибка', (

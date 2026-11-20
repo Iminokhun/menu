@@ -44,7 +44,6 @@ const _branchFields = {
   'languages',
   'order_whatsapp',
   'delivery_price',
-  'review_whatsapp',
   ...styleColumns,
   ...locationColumns,
 };
@@ -695,7 +694,7 @@ class Api {
             'Ссылка на карту должна начинаться с https://',
           );
         }
-      case 'order_whatsapp' || 'review_whatsapp':
+      case 'order_whatsapp':
         if (v is String) {
           final digits = normalizeWaPhone(
             v,
@@ -840,11 +839,8 @@ class Api {
     // Нет права — для гостя это просто незаполненный номер: кнопки заказа
     // нет, и объяснять ему нечего. Сам номер при этом остаётся в базе
     if (m['orders_enabled'] != true) m['order_whatsapp'] = '';
-    // Отзывы устроены иначе: номер и право не связаны. Нет права — нет и
-    // кнопки, поэтому номер тоже затираем; но если право есть, а номер
-    // пуст, кнопка у гостя остаётся и отзыв просто ляжет на сервер.
-    // Признак для кнопки — сам reviews_enabled, он уезжает гостю как есть
-    if (m['reviews_enabled'] != true) m['review_whatsapp'] = '';
+    // Отзывам номер не нужен: они никуда не пересылаются, а ложатся в
+    // админку кафе. Гостю нужен только сам признак — есть ли кнопка
     return _json(m);
   }
 
@@ -1233,10 +1229,8 @@ class Api {
     if (_access(branch['cafe_id'] as String).access == Access.expired) {
       throw ApiError(403, _unpaidGuest, code: 'unpaid');
     }
-    // Условие здесь одно — право. Номер WhatsApp намеренно не проверяется,
-    // и это не недосмотр: без номера отзыв всё равно принимается и ложится
-    // в админку кафе, просто WhatsApp у гостя не открывается. Не «чинить»
-    // по образцу заказов, где нет номера — нет и кнопки
+    // Условие здесь одно — право. Никакого номера, как у заказов, тут нет
+    // и не нужно: отзыв никуда не пересылается, он ложится в админку кафе
     if ((branch['reviews_enabled'] as int? ?? 0) == 0) {
       throw ApiError(
         403,
@@ -2014,14 +2008,12 @@ class Api {
     final users = db.select('''
       select id, cafe_id, login, is_active, created_at from users
        where role = 'cafe_admin' order by created_at''');
-    // Номера — чтобы на экране было видно не только выданное право, но и
-    // вписало ли кафе номер. У заказов без номера ничего не идёт и это
-    // выглядит как поломка; у отзывов без номера они просто не дублируются
-    // в WhatsApp, и это тоже надо различать
+    // order_whatsapp — чтобы на экране было видно не только выданное
+    // право, но и вписало ли кафе номер: без номера заказы всё равно не
+    // идут, а выглядит это как поломка. Отзывам номер не нужен вовсе
     final branches = db.select(
       'select id, cafe_id, slug, name, is_active, orders_enabled, '
-      'order_whatsapp, reviews_enabled, review_whatsapp '
-      'from branches order by sort_order, name',
+      'order_whatsapp, reviews_enabled from branches order by sort_order, name',
     );
     return _json(
       cafes.map((c) {

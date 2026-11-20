@@ -72,7 +72,6 @@ class AppLocalizations {
       'reviewComment': 'Что понравилось или не понравилось',
       'sendReview': 'ОТПРАВИТЬ ОТЗЫВ',
       'reviewSentHint': 'Спасибо! Кафе увидит ваш отзыв',
-      'reviewSentWhatsappHint': 'Отзыв готов. Нажмите «Отправить» в WhatsApp',
       'reviewFailed': 'Отзыв не сохранился. Попробуйте позже',
       'reviewNotAvailable': 'Отзывы в этом кафе пока не принимаются',
       'reviewTooOften': 'Слишком много отзывов подряд. Подождите немного',
@@ -133,7 +132,6 @@ class AppLocalizations {
       'reviewComment': 'What you liked or did not',
       'sendReview': 'SEND REVIEW',
       'reviewSentHint': 'Thank you! The cafe will see your review',
-      'reviewSentWhatsappHint': 'Review is ready. Tap Send in WhatsApp',
       'reviewFailed': 'The review was not saved. Try again later',
       'reviewNotAvailable': 'This cafe does not take reviews yet',
       'reviewTooOften': 'Too many reviews in a row. Please wait a little',
@@ -194,7 +192,6 @@ class AppLocalizations {
       'reviewComment': 'Neyi beğendiniz, neyi beğenmediniz',
       'sendReview': 'YORUMU GÖNDER',
       'reviewSentHint': 'Teşekkürler! Kafe yorumunuzu görecek',
-      'reviewSentWhatsappHint': 'Yorum hazır. WhatsApp’ta Gönder’e dokunun',
       'reviewFailed': 'Yorum kaydedilmedi. Daha sonra deneyin',
       'reviewNotAvailable': 'Bu kafe henüz yorum almıyor',
       'reviewTooOften': 'Arka arkaya çok fazla yorum. Biraz bekleyin',
@@ -255,7 +252,6 @@ class AppLocalizations {
       'reviewComment': 'Эмне жакты, эмне жаккан жок',
       'sendReview': 'ПИКИРДИ ЖӨНӨТҮҮ',
       'reviewSentHint': 'Рахмат! Кафе пикириңизди көрөт',
-      'reviewSentWhatsappHint': 'Пикир даяр. WhatsApp’та «Жөнөтүү» баскычын басыңыз',
       'reviewFailed': 'Пикир сакталган жок. Кийинчерээк аракет кылыңыз',
       'reviewNotAvailable': 'Бул кафе азырынча пикир кабыл албайт',
       'reviewTooOften': 'Өтө көп пикир жөнөтүлдү. Бир аз күтө туруңуз',
@@ -316,7 +312,6 @@ class AppLocalizations {
       'reviewComment': 'Не ұнады, не ұнамады',
       'sendReview': 'ПІКІРДІ ЖІБЕРУ',
       'reviewSentHint': 'Рахмет! Кафе пікіріңізді көреді',
-      'reviewSentWhatsappHint': 'Пікір дайын. WhatsApp-та «Жіберу» түймесін басыңыз',
       'reviewFailed': 'Пікір сақталмады. Кейінірек көріңіз',
       'reviewNotAvailable': 'Бұл кафе әзірге пікір қабылдамайды',
       'reviewTooOften': 'Қатарынан тым көп пікір. Сәл күте тұрыңыз',
@@ -377,7 +372,6 @@ class AppLocalizations {
       'reviewComment': 'Nima yoqdi, nima yoqmadi',
       'sendReview': 'FIKRNI YUBORISH',
       'reviewSentHint': 'Rahmat! Kafe fikringizni ko‘radi',
-      'reviewSentWhatsappHint': 'Fikr tayyor. WhatsApp’da «Yuborish»ni bosing',
       'reviewFailed': 'Fikr saqlanmadi. Keyinroq urinib ko‘ring',
       'reviewNotAvailable': 'Bu kafe hozircha fikr qabul qilmaydi',
       'reviewTooOften': 'Ketma-ket juda ko‘p fikr. Biroz kuting',
@@ -438,7 +432,6 @@ class AppLocalizations {
       'reviewComment': '哪里满意，哪里不满意',
       'sendReview': '发送评价',
       'reviewSentHint': '谢谢！餐厅会看到您的评价',
-      'reviewSentWhatsappHint': '评价已准备好，请在 WhatsApp 中点击发送',
       'reviewFailed': '评价未保存，请稍后再试',
       'reviewNotAvailable': '该餐厅暂不接受评价',
       'reviewTooOften': '提交过于频繁，请稍候',
@@ -499,7 +492,6 @@ class AppLocalizations {
       'reviewComment': '좋았던 점과 아쉬웠던 점',
       'sendReview': '리뷰 보내기',
       'reviewSentHint': '감사합니다! 카페가 리뷰를 확인합니다',
-      'reviewSentWhatsappHint': '리뷰가 준비되었습니다. WhatsApp에서 보내기를 누르세요',
       'reviewFailed': '리뷰가 저장되지 않았습니다. 나중에 다시 시도해 주세요',
       'reviewNotAvailable': '이 카페는 아직 리뷰를 받지 않습니다',
       'reviewTooOften': '리뷰를 너무 자주 보냈습니다. 잠시 기다려 주세요',
@@ -560,7 +552,6 @@ class AppLocalizations {
       'reviewComment': 'よかった点・気になった点',
       'sendReview': 'レビューを送信',
       'reviewSentHint': 'ありがとうございます。お店が確認します',
-      'reviewSentWhatsappHint': 'レビューができました。WhatsApp で送信してください',
       'reviewFailed': 'レビューを保存できませんでした。後でお試しください',
       'reviewNotAvailable': 'この店舗はまだレビューを受け付けていません',
       'reviewTooOften': '送信が多すぎます。少しお待ちください',
@@ -621,7 +612,6 @@ class AppLocalizations {
       'reviewComment': 'Was hat gefallen, was nicht',
       'sendReview': 'BEWERTUNG SENDEN',
       'reviewSentHint': 'Danke! Das Café sieht Ihre Bewertung',
-      'reviewSentWhatsappHint': 'Bewertung ist fertig. Tippen Sie in WhatsApp auf Senden',
       'reviewFailed': 'Bewertung wurde nicht gespeichert. Später versuchen',
       'reviewNotAvailable': 'Dieses Café nimmt noch keine Bewertungen an',
       'reviewTooOften': 'Zu viele Bewertungen hintereinander. Bitte warten Sie kurz',
@@ -682,7 +672,6 @@ class AppLocalizations {
       'reviewComment': 'Ce qui vous a plu ou non',
       'sendReview': 'ENVOYER L’AVIS',
       'reviewSentHint': 'Merci ! Le café verra votre avis',
-      'reviewSentWhatsappHint': 'L’avis est prêt. Appuyez sur Envoyer dans WhatsApp',
       'reviewFailed': 'L’avis n’a pas été enregistré. Réessayez plus tard',
       'reviewNotAvailable': 'Ce café n’accepte pas encore les avis',
       'reviewTooOften': 'Trop d’avis d’affilée. Patientez un instant',
@@ -743,7 +732,6 @@ class AppLocalizations {
       'reviewComment': 'Qué le gustó y qué no',
       'sendReview': 'ENVIAR OPINIÓN',
       'reviewSentHint': '¡Gracias! El café verá su opinión',
-      'reviewSentWhatsappHint': 'La opinión está lista. Pulse Enviar en WhatsApp',
       'reviewFailed': 'La opinión no se guardó. Inténtelo más tarde',
       'reviewNotAvailable': 'Este café todavía no acepta opiniones',
       'reviewTooOften': 'Demasiadas opiniones seguidas. Espere un momento',
@@ -817,7 +805,6 @@ class AppLocalizations {
   String get reviewComment => get('reviewComment');
   String get sendReview => get('sendReview');
   String get reviewSentHint => get('reviewSentHint');
-  String get reviewSentWhatsappHint => get('reviewSentWhatsappHint');
   String get reviewFailed => get('reviewFailed');
   String get reviewNotAvailable => get('reviewNotAvailable');
   String get reviewTooOften => get('reviewTooOften');

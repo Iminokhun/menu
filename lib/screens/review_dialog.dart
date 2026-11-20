@@ -7,8 +7,6 @@ import 'package:google_fonts/google_fonts.dart';
 import '../l10n/app_localizations.dart';
 import '../l10n/translation_service.dart';
 import '../models/branch.dart';
-import '../open_link.dart';
-import '../review/review_message.dart';
 import '../review/review_once.dart';
 import '../responsive.dart';
 import '../review/review_sender.dart';
@@ -62,9 +60,6 @@ class _ReviewDialogState extends State<ReviewDialog> {
   /// нажал «Отправить», и ругаться поздно и не за что
   String? _notice;
 
-  /// Ссылка на переписку — чтобы открыть её ещё раз, если окно заблокировали
-  String? _lastLink;
-
   @override
   void dispose() {
     _waiter.dispose();
@@ -80,15 +75,12 @@ class _ReviewDialogState extends State<ReviewDialog> {
     comment: _comment.text.trim(),
   );
 
-  /// ВАЖНО: метод НЕ async и до открытия ссылки не содержит ни одного
-  /// `await`. Браузер открывает новую вкладку только внутри жеста гостя;
-  /// после любого ожидания Safari её молча блокирует. Поэтому ссылка
-  /// открывается первой строкой внутри `submit`, а результат запроса
-  /// приходит потом и ни на что уже не влияет.
+  /// Гость ничего не открывает и никуда не уходит: отзыв просто уезжает на
+  /// сервер, а экран сразу говорит спасибо. Ответа не ждём — если он не
+  /// дойдёт, скажем об этом тихой строкой, а не ошибкой.
   void _submit() {
     if (_rating == 0) return;
     final draft = _draft();
-    _lastLink = widget.sender.linkFor(draft, widget.branch);
     final saving = widget.sender.submit(
       draft,
       branch: widget.branch,
@@ -104,11 +96,6 @@ class _ReviewDialogState extends State<ReviewDialog> {
   void _onSaved(bool ok) {
     if (!mounted || ok) return;
     setState(() => _notice = AppLocalizations.of(context).reviewFailed);
-  }
-
-  void _openAgain() {
-    final link = _lastLink;
-    if (link != null) openLink(link);
   }
 
   @override
@@ -208,7 +195,7 @@ class _ReviewDialogState extends State<ReviewDialog> {
           ),
         ),
         child: Text(
-          widget.sender.opensWhatsapp ? l.sendToWhatsapp : l.sendReview,
+          l.sendReview,
           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
         ),
       ),
@@ -268,11 +255,7 @@ class _ReviewDialogState extends State<ReviewDialog> {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              // Без номера WhatsApp не открывался, и просить «нажмите
-              // Отправить» было бы неправдой
-              widget.sender.opensWhatsapp
-                  ? l.reviewSentWhatsappHint
-                  : l.reviewSentHint,
+              l.reviewSentHint,
               style: TextStyle(color: config.text, fontSize: 16),
             ),
           ),
@@ -289,18 +272,6 @@ class _ReviewDialogState extends State<ReviewDialog> {
         ),
       ],
       const SizedBox(height: 20),
-      if (_lastLink != null)
-        OutlinedButton.icon(
-          onPressed: _openAgain,
-          icon: const Icon(Icons.open_in_new, size: 18),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: config.text,
-            side: BorderSide(color: config.text.withValues(alpha: 0.3)),
-            padding: const EdgeInsets.symmetric(vertical: 14),
-          ),
-          label: Text(l.openWhatsappAgain),
-        ),
-      const SizedBox(height: 10),
       TextButton(
         onPressed: () => Navigator.pop(context),
         child: Text(

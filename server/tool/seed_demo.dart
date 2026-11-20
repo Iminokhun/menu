@@ -31,10 +31,10 @@ void main(List<String> args) {
   );
   db.execute(
     "insert into branches (id, cafe_id, slug, name, slogan, address, "
-    "order_whatsapp, delivery_price, orders_enabled, review_whatsapp, "
-    "reviews_enabled, languages) values "
+    "order_whatsapp, delivery_price, orders_enabled, reviews_enabled, "
+    "languages) values "
     "('b1', 'c1', 'demo', 'Демо-кафе', 'Проверка заказов', "
-    "'ул. Киевская 95, 2 этаж', '996555112233', 150, 1, '996555112233', 1, "
+    "'ул. Киевская 95, 2 этаж', '996555112233', 150, 1, 1, "
     "'[\"ru\",\"en\"]')",
   );
   db.execute(
