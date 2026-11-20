@@ -329,19 +329,22 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     );
   }
 
-  /// Переключатель языков — в одной строке с названием кафе, слева от
-  /// него. Отступ справа живёт внутри: у филиала с единственным языком
-  /// переключателя нет вовсе, и пустого места от него не остаётся.
+  /// Переключатель языков — своей строкой под названием кафе, у левого
+  /// края. Отступ сверху живёт внутри: у филиала с единственным языком
+  /// переключателя нет вовсе, и пустой строки от него не остаётся.
   ///
   /// Условие то же, что внутри самого LangSwitcher, — иначе отступ
   /// пришлось бы ставить снаружи и он остался бы висеть
-  Widget _langBeside(ThemeConfig config) {
+  Widget _langUnderName(ThemeConfig config) {
     if ((currentBranch.value?.languages.length ?? 1) < 2) {
       return const SizedBox.shrink();
     }
     return Padding(
-      padding: const EdgeInsets.only(right: 12),
-      child: LangSwitcher(config: config),
+      padding: const EdgeInsets.only(top: 12),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: LangSwitcher(config: config),
+      ),
     );
   }
 
@@ -511,27 +514,18 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
           const SizedBox(height: 30),
 
-          // Flexible, а не Expanded: название занимает столько, сколько
-          // нужно, и переносится по словам, если языков много и строка
-          // не помещается
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _langBeside(config),
-              Flexible(
-                child: Text(
-                  shopName,
-                  textAlign: TextAlign.center,
-                  style: config.titleStyle(
-                    fontSize: 36,
-                    fontWeight: FontWeight.w800,
-                    color: config.text,
-                    height: 1.1,
-                  ),
-                ),
-              ),
-            ],
+          Text(
+            shopName,
+            textAlign: TextAlign.center,
+            style: config.titleStyle(
+              fontSize: 36,
+              fontWeight: FontWeight.w800,
+              color: config.text,
+              height: 1.1,
+            ),
           ),
+
+          _langUnderName(config),
 
           const SizedBox(height: 20),
           // Wrap, а не Row: в узкой боковой панели кнопки переносятся на
@@ -622,7 +616,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _langBeside(config),
               Expanded(
                 child: Text(
                   shopName,
@@ -660,11 +653,18 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
             ],
           ),
 
-          const SizedBox(height: 20),
+          const SizedBox(height: 12),
 
+          // Языки слева, поиск с обновлением справа — в одной строке под
+          // названием: отдельный ярус только ради переключателя съедает
+          // на телефоне верх первой строки блюд
           Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [_searchButton(config), _refreshButton(config)],
+            children: [
+              LangSwitcher(config: config),
+              const Spacer(),
+              _searchButton(config),
+              _refreshButton(config),
+            ],
           ),
           // Своей строкой, а не шестой иконкой в ряду выше: на узком
           // телефоне он и так впритык, а подпись у этой кнопки нужна —
