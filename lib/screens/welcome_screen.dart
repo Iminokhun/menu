@@ -329,8 +329,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     );
   }
 
-  /// Всё, что стоит под названием кафе: языки, поиск, обновление и
-  /// «Оставить отзыв» — одной лентой у левого края.
+  /// Языки, поиск и обновление — одной лентой под названием кафе, у
+  /// левого края. «Оставить отзыв» стоит строкой ниже, справа: у него
+  /// есть подпись, и в ряду мелких иконок он перетягивал бы внимание.
   ///
   /// Wrap, а не Row: ряд переключателя растёт вместе с числом языков (до
   /// четырёх он показывает их кнопками подряд), и на пятом языке он
@@ -351,11 +352,18 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
           LangSwitcher(config: config),
           _searchButton(config),
           _refreshButton(config),
-          _reviewButton(config),
         ],
       ),
     );
   }
+
+  /// «Оставить отзыв» — своей строкой под лентой, прижат вправо.
+  /// Пустой строки у филиала без отзывов не остаётся: сама кнопка там
+  /// ничего не занимает
+  Widget _reviewLine(ThemeConfig config) => Align(
+    alignment: Alignment.centerRight,
+    child: _reviewButton(config),
+  );
 
   Widget _searchButton(ThemeConfig config) {
     return IconButton(
@@ -537,6 +545,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
           const SizedBox(height: 16),
 
           _underNameBar(config),
+          _reviewLine(config),
           _offlineNote(config),
 
           const Spacer(),
@@ -652,10 +661,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
           const SizedBox(height: 12),
 
-          // «Оставить отзыв» с подписью в эту строку на телефоне не
-          // влезает и переносится на вторую сам — ровно там, где он и
-          // стоял раньше, но теперь это решает ширина, а не вёрстка
           _underNameBar(config),
+          _reviewLine(config),
           _offlineNote(config),
         ],
       ),
