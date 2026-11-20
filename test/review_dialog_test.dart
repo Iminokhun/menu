@@ -1,5 +1,6 @@
-// Форма отзыва: без оценки отправлять нечего, с оценкой уходит ровно один
-// отзыв, и гость при этом никуда со страницы не уходит.
+// Форма отзыва: без оценки отправлять нечего — форма просит звёзды, но
+// кнопку не блокирует, — с оценкой уходит ровно один отзыв, и гость при
+// этом никуда со страницы не уходит.
 import 'package:cafe_andalus_menu/l10n/app_localizations.dart';
 import 'package:cafe_andalus_menu/models/branch.dart';
 import 'package:cafe_andalus_menu/review/review_sender.dart';
@@ -75,16 +76,34 @@ void main() {
   // Отправка запоминает отзыв на устройстве — хранилище нужно подставное
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  testWidgets('без оценки кнопка не нажимается и отзыв не уходит', (
+  testWidgets('без оценки: кнопка живая, просит звёзды, отзыв не уходит', (
     tester,
   ) async {
+    const ask = 'Сначала поставьте оценку звёздами';
     final sender = _FakeSender();
     await _open(tester, sender);
 
-    expect(_sendButton(tester).onPressed, isNull);
+    // Кнопка нажимается всегда: серая кнопка молчит о причине
+    expect(_sendButton(tester).onPressed, isNotNull);
+    // Пустая форма ни в чём не провинилась — просьбы до нажатия нет
+    expect(find.text(ask), findsNothing);
+
     await tester.tap(find.byType(ElevatedButton));
     await tester.pump(const Duration(seconds: 1));
+
     expect(sender.calls, 0);
+    expect(find.text(ask), findsOneWidget);
+    // Форма осталась на месте, «спасибо» не показано
+    expect(find.text('ОТПРАВИТЬ ОТЗЫВ'), findsOneWidget);
+
+    // Звезда поставлена — просьба уходит сразу, а не после нажатия
+    await _tapStar(tester, 4);
+    expect(find.text(ask), findsNothing);
+
+    await tester.tap(find.byType(ElevatedButton));
+    await tester.pump(const Duration(seconds: 1));
+    expect(sender.calls, 1);
+    expect(sender.last?.rating, 4);
   });
 
   testWidgets('оценка и поля уходят ровно одним отзывом', (tester) async {

@@ -67,6 +67,7 @@ class AppLocalizations {
       'leaveReview': 'Оставить отзыв',
       'reviewTitle': 'ОТЗЫВ О КАФЕ',
       'reviewRatingHint': 'Как вам у нас?',
+      'reviewNeedStars': 'Сначала поставьте оценку звёздами',
       'reviewWaiter': 'Имя официанта',
       'reviewTable': 'Номер стола',
       'reviewComment': 'Что понравилось или не понравилось',
@@ -127,6 +128,7 @@ class AppLocalizations {
       'leaveReview': 'Leave a review',
       'reviewTitle': 'REVIEW',
       'reviewRatingHint': 'How was it?',
+      'reviewNeedStars': 'Please rate us with the stars first',
       'reviewWaiter': 'Waiter name',
       'reviewTable': 'Table number',
       'reviewComment': 'What you liked or did not',
@@ -187,6 +189,7 @@ class AppLocalizations {
       'leaveReview': 'Yorum bırakın',
       'reviewTitle': 'YORUM',
       'reviewRatingHint': 'Bizi nasıl buldunuz?',
+      'reviewNeedStars': 'Lütfen önce yıldızlarla puan verin',
       'reviewWaiter': 'Garsonun adı',
       'reviewTable': 'Masa numarası',
       'reviewComment': 'Neyi beğendiniz, neyi beğenmediniz',
@@ -247,6 +250,7 @@ class AppLocalizations {
       'leaveReview': 'Пикир калтыруу',
       'reviewTitle': 'ПИКИР',
       'reviewRatingHint': 'Бизде кандай болду?',
+      'reviewNeedStars': 'Адегенде жылдызчалар менен баа коюңуз',
       'reviewWaiter': 'Официанттын аты',
       'reviewTable': 'Үстөлдүн номери',
       'reviewComment': 'Эмне жакты, эмне жаккан жок',
@@ -307,6 +311,7 @@ class AppLocalizations {
       'leaveReview': 'Пікір қалдыру',
       'reviewTitle': 'ПІКІР',
       'reviewRatingHint': 'Бізде қалай болды?',
+      'reviewNeedStars': 'Алдымен жұлдызшалармен баға қойыңыз',
       'reviewWaiter': 'Даяшының аты',
       'reviewTable': 'Үстел нөмірі',
       'reviewComment': 'Не ұнады, не ұнамады',
@@ -367,6 +372,7 @@ class AppLocalizations {
       'leaveReview': 'Fikr qoldirish',
       'reviewTitle': 'FIKR',
       'reviewRatingHint': 'Bizda qanday bo‘ldi?',
+      'reviewNeedStars': 'Avval yulduzchalar bilan baho bering',
       'reviewWaiter': 'Ofitsiant ismi',
       'reviewTable': 'Stol raqami',
       'reviewComment': 'Nima yoqdi, nima yoqmadi',
@@ -427,6 +433,7 @@ class AppLocalizations {
       'leaveReview': '留下评价',
       'reviewTitle': '评价',
       'reviewRatingHint': '您觉得怎么样？',
+      'reviewNeedStars': '请先用星星评分',
       'reviewWaiter': '服务员姓名',
       'reviewTable': '桌号',
       'reviewComment': '哪里满意，哪里不满意',
@@ -487,6 +494,7 @@ class AppLocalizations {
       'leaveReview': '리뷰 남기기',
       'reviewTitle': '리뷰',
       'reviewRatingHint': '오늘 어떠셨나요?',
+      'reviewNeedStars': '먼저 별점을 선택해 주세요',
       'reviewWaiter': '담당 직원 이름',
       'reviewTable': '테이블 번호',
       'reviewComment': '좋았던 점과 아쉬웠던 점',
@@ -547,6 +555,7 @@ class AppLocalizations {
       'leaveReview': 'レビューを書く',
       'reviewTitle': 'レビュー',
       'reviewRatingHint': 'いかがでしたか？',
+      'reviewNeedStars': 'まず星で評価してください',
       'reviewWaiter': '担当スタッフの名前',
       'reviewTable': 'テーブル番号',
       'reviewComment': 'よかった点・気になった点',
@@ -607,6 +616,7 @@ class AppLocalizations {
       'leaveReview': 'Bewertung abgeben',
       'reviewTitle': 'BEWERTUNG',
       'reviewRatingHint': 'Wie war es bei uns?',
+      'reviewNeedStars': 'Bitte zuerst mit Sternen bewerten',
       'reviewWaiter': 'Name der Bedienung',
       'reviewTable': 'Tischnummer',
       'reviewComment': 'Was hat gefallen, was nicht',
@@ -667,6 +677,7 @@ class AppLocalizations {
       'leaveReview': 'Laisser un avis',
       'reviewTitle': 'AVIS',
       'reviewRatingHint': 'Comment était-ce ?',
+      'reviewNeedStars': 'Donnez d’abord une note avec les étoiles',
       'reviewWaiter': 'Nom du serveur',
       'reviewTable': 'Numéro de table',
       'reviewComment': 'Ce qui vous a plu ou non',
@@ -727,6 +738,7 @@ class AppLocalizations {
       'leaveReview': 'Dejar una opinión',
       'reviewTitle': 'OPINIÓN',
       'reviewRatingHint': '¿Qué tal estuvo?',
+      'reviewNeedStars': 'Primero puntúa con las estrellas',
       'reviewWaiter': 'Nombre del camarero',
       'reviewTable': 'Número de mesa',
       'reviewComment': 'Qué le gustó y qué no',
@@ -800,6 +812,7 @@ class AppLocalizations {
   String get leaveReview => get('leaveReview');
   String get reviewTitle => get('reviewTitle');
   String get reviewRatingHint => get('reviewRatingHint');
+  String get reviewNeedStars => get('reviewNeedStars');
   String get reviewWaiter => get('reviewWaiter');
   String get reviewTable => get('reviewTable');
   String get reviewComment => get('reviewComment');

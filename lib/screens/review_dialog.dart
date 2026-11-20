@@ -37,8 +37,10 @@ void showReviewForm(
 
 /// Отзыв гостя: звёзды и три необязательных поля.
 ///
-/// Обязательных полей нет вовсе, поэтому нет и красных ошибок: кнопка просто
-/// не нажимается, пока не поставлена оценка — без неё отправлять нечего.
+/// Обязательных полей нет вовсе, поэтому нет и красных ошибок. Оценка нужна
+/// — без неё отправлять нечего, — но кнопка всё равно нажимается: серая
+/// кнопка без объяснения выглядит поломкой, а гость не обязан догадываться,
+/// чего от него ждут. Нажал без звёзд — форма сама попросит их поставить.
 class ReviewDialog extends StatefulWidget {
   final Branch branch;
   final ReviewSender sender;
@@ -56,6 +58,10 @@ class _ReviewDialogState extends State<ReviewDialog> {
 
   int _rating = 0;
   bool _sent = false;
+
+  /// Нажали «Отправить» без оценки — показываем просьбу поставить звёзды.
+  /// До первого нажатия её нет: пустая форма ни в чём не провинилась
+  bool _needStars = false;
 
   /// Отзыв не записался на сервере. Красным это гостю не показываем: он уже
   /// нажал «Отправить», и ругаться поздно и не за что
@@ -80,7 +86,10 @@ class _ReviewDialogState extends State<ReviewDialog> {
   /// сервер, а экран сразу говорит спасибо. Ответа не ждём — если он не
   /// дойдёт, скажем об этом тихой строкой, а не ошибкой.
   void _submit() {
-    if (_rating == 0) return;
+    if (_rating == 0) {
+      setState(() => _needStars = true);
+      return;
+    }
     final draft = _draft();
     final saving = widget.sender.submit(
       draft,
@@ -162,9 +171,22 @@ class _ReviewDialogState extends State<ReviewDialog> {
         child: StarRating(
           value: _rating,
           color: config.accent,
-          onChanged: (v) => setState(() => _rating = v),
+          // Просьба уходит в тот же миг, как звезда поставлена: висеть
+          // она должна ровно до тех пор, пока есть о чём просить
+          onChanged: (v) => setState(() {
+            _rating = v;
+            _needStars = false;
+          }),
         ),
       ),
+      if (_needStars) ...[
+        const SizedBox(height: 8),
+        Text(
+          l.reviewNeedStars,
+          textAlign: TextAlign.center,
+          style: TextStyle(color: config.accent, fontSize: 14),
+        ),
+      ],
       const SizedBox(height: 18),
       _field(config, _waiter, l.reviewWaiter, icon: Icons.person_outline, maxLength: 60),
       _field(
@@ -187,9 +209,10 @@ class _ReviewDialogState extends State<ReviewDialog> {
       ),
       const SizedBox(height: 6),
       ElevatedButton(
-        // Пока нет оценки, отправлять нечего. Это не «ошибка поля», а
-        // просто незаконченная форма, поэтому красного ничего нет
-        onPressed: _rating == 0 ? null : _submit,
+        // Кнопка живая всегда. Без оценки отправлять нечего, но говорит
+        // об этом надпись у звёзд, а не серая кнопка: серая молчит, и
+        // гость видит просто сломанную форму
+        onPressed: _submit,
         style: ElevatedButton.styleFrom(
           backgroundColor: config.accent,
           foregroundColor: config.onAccent,
