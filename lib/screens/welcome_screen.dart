@@ -49,7 +49,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   String get shopLogoUrl => currentBranch.value?.logoUrl ?? '';
   String get shopQrUrl => currentBranch.value?.qrUrl ?? '';
   String get shopName => currentBranch.value?.name ?? 'CAFE ANDALUS';
-  String get shopSlogan => currentBranch.value?.slogan ?? 'Добро пожаловать';
 
   @override
   void initState() {
@@ -330,6 +329,22 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     );
   }
 
+  /// Переключатель языков — в одной строке с названием кафе, слева от
+  /// него. Отступ справа живёт внутри: у филиала с единственным языком
+  /// переключателя нет вовсе, и пустого места от него не остаётся.
+  ///
+  /// Условие то же, что внутри самого LangSwitcher, — иначе отступ
+  /// пришлось бы ставить снаружи и он остался бы висеть
+  Widget _langBeside(ThemeConfig config) {
+    if ((currentBranch.value?.languages.length ?? 1) < 2) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(right: 12),
+      child: LangSwitcher(config: config),
+    );
+  }
+
   Widget _searchButton(ThemeConfig config) {
     return IconButton(
       tooltip: AppLocalizations.of(context).search,
@@ -496,27 +511,26 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
           const SizedBox(height: 30),
 
-          Text(
-            shopName,
-            textAlign: TextAlign.center,
-            style: config.titleStyle(
-              fontSize: 36,
-              fontWeight: FontWeight.w800,
-              color: config.text,
-              height: 1.1,
-            ),
-          ),
-          const SizedBox(height: 10),
-
-          Text(
-            shopSlogan.toUpperCase(),
-            textAlign: TextAlign.center,
-            style: GoogleFonts.manrope(
-              fontSize: 14,
-              letterSpacing: 3,
-              fontWeight: FontWeight.w600,
-              color: config.accent,
-            ),
+          // Flexible, а не Expanded: название занимает столько, сколько
+          // нужно, и переносится по словам, если языков много и строка
+          // не помещается
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _langBeside(config),
+              Flexible(
+                child: Text(
+                  shopName,
+                  textAlign: TextAlign.center,
+                  style: config.titleStyle(
+                    fontSize: 36,
+                    fontWeight: FontWeight.w800,
+                    color: config.text,
+                    height: 1.1,
+                  ),
+                ),
+              ),
+            ],
           ),
 
           const SizedBox(height: 20),
@@ -527,7 +541,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
             crossAxisAlignment: WrapCrossAlignment.center,
             spacing: 4,
             children: [
-              LangSwitcher(config: config),
               _searchButton(config),
               _refreshButton(config),
               _reviewButton(config),
@@ -608,32 +621,17 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              _langBeside(config),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      shopName,
-                      style: config.titleStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w800,
-                        color: config.text,
-                        height: 1.1,
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      shopSlogan.toUpperCase(),
-                      style: GoogleFonts.manrope(
-                        fontSize: 12,
-                        letterSpacing: 2,
-                        fontWeight: FontWeight.w600,
-                        color: config.accent,
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  shopName,
+                  style: config.titleStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
+                    color: config.text,
+                    height: 1.1,
+                  ),
                 ),
               ),
               Container(
@@ -666,12 +664,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              LangSwitcher(config: config),
-              const SizedBox(width: 8),
-              _searchButton(config),
-              _refreshButton(config),
-            ],
+            children: [_searchButton(config), _refreshButton(config)],
           ),
           // Своей строкой, а не шестой иконкой в ряду выше: на узком
           // телефоне он и так впритык, а подпись у этой кнопки нужна —
