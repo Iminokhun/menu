@@ -371,6 +371,197 @@ Future<void> main() async {
       (listed as List).length,
     );
 
+    // --- Отбор: оценка, период, официант ---
+    // Свои строки с явным временем и своими именами: отзывы, отправленные
+    // выше, не должны путать счёт
+    void seed(String id, int rating, String waiter, int daysAgo) {
+      db.execute(
+        "insert into reviews (id, branch_id, rating, waiter, comment, "
+        "created_at) values (?, ?, ?, ?, 'отбор', "
+        "datetime('now', ?))",
+        [id, _branchId, rating, waiter, '-$daysAgo days'],
+      );
+    }
+
+    db.execute("delete from reviews where branch_id = '$_branchId'");
+    seed('f1', 5, 'Айгуль', 0);
+    seed('f2', 4, 'Нурбек', 0);
+    seed('f3', 3, 'Айгуль', 2);
+    seed('f4', 2, 'Айгуль', 2);
+    seed('f5', 1, 'Нурбек', 10);
+    seed('f6', 5, '', 10);
+
+    Future<List<String>> ids(String query) async {
+      final (c, rows) = await admin(
+        'GET',
+        '/api/admin/reviews?branch_id=$_branchId&limit=200&$query',
+        mine,
+      );
+      if (c != 200) return ['код $c'];
+      return (rows as List).map((r) => (r as Map)['id'] as String).toList()
+        ..sort();
+    }
+
+    Future<int> filterCode(String query) async {
+      final (c, _) = await admin(
+        'GET',
+        '/api/admin/reviews?branch_id=$_branchId&$query',
+        mine,
+      );
+      return c;
+    }
+
+    expect(
+      'min_rating=4 — только 4 и 5',
+      (await ids('min_rating=4')).join(',') == 'f1,f2,f6',
+      await ids('min_rating=4'),
+    );
+    expect(
+      'корзина «3» — ровно тройки',
+      (await ids('min_rating=3&max_rating=3')).join(',') == 'f3',
+      await ids('min_rating=3&max_rating=3'),
+    );
+    expect(
+      'корзина «2 и 1» — только плохие',
+      (await ids('max_rating=2')).join(',') == 'f4,f5',
+      await ids('max_rating=2'),
+    );
+    for (final bad in ['0', '6', 'abc', '1 or 1=1']) {
+      expect('min_rating=«$bad» — 400', await filterCode('min_rating=$bad') == 400);
+    }
+    expect('пустой min_rating — отбора нет', (await ids('min_rating=')).length == 6);
+    expect(
+      'нижняя оценка выше верхней — 400',
+      await filterCode('min_rating=4&max_rating=2') == 400,
+    );
+
+    final yesterday = db
+        .select("select datetime('now', '-1 days') t")
+        .first['t'] as String;
+    expect(
+      'since отсекает старое',
+      (await ids('since=$yesterday')).join(',') == 'f1,f2',
+      await ids('since=$yesterday'),
+    );
+    final edge = db
+        .select("select created_at from reviews where id = 'f3'")
+        .first['created_at'] as String;
+    expect(
+      'строка ровно на границе since попадает',
+      (await ids('since=$edge')).contains('f3'),
+      await ids('since=$edge'),
+    );
+    expect(
+      'since и before вместе дают окно',
+      (await ids('since=${db.select("select datetime('now','-5 days') t").first['t']}'
+              '&before=${db.select("select datetime('now','-1 days') t").first['t']}'))
+              .join(',') ==
+          'f3,f4',
+      await ids('since=${db.select("select datetime('now','-5 days') t").first['t']}'
+          '&before=${db.select("select datetime('now','-1 days') t").first['t']}'),
+    );
+    for (final bad in ['вчера', "' or '1'='1", '2026-13']) {
+      expect('since=«$bad» — 400', await filterCode('since=$bad') == 400);
+    }
+
+    expect(
+      'waiter — только свои отзывы',
+      (await ids('waiter=Айгуль')).join(',') == 'f1,f3,f4',
+      await ids('waiter=Айгуль'),
+    );
+    expect(
+      'имя сверяется точно, а не по регистру',
+      (await ids('waiter=айгуль')).isEmpty,
+      await ids('waiter=айгуль'),
+    );
+    expect(
+      'подстановок нет: «Ай%» никого не находит',
+      (await ids('waiter=${Uri.encodeComponent('Ай%')}')).isEmpty,
+      await ids('waiter=${Uri.encodeComponent('Ай%')}'),
+    );
+    expect('пустой waiter — отбора нет', (await ids('waiter=')).length == 6);
+    expect(
+      'оценка, период и официант сужают вместе',
+      (await ids('waiter=Айгуль&max_rating=3&since='
+              '${db.select("select datetime('now','-5 days') t").first['t']}'))
+              .join(',') ==
+          'f3,f4',
+      await ids('waiter=Айгуль&max_rating=3'),
+    );
+
+    // Сторож главного правила: предел применяется к уже отобранному
+    final (_, narrow) = await admin(
+      'GET',
+      '/api/admin/reviews?branch_id=$_branchId&waiter=Айгуль&limit=2',
+      mine,
+    );
+    expect(
+      'предел режет отобранное, а не наоборот',
+      (narrow as List).length == 2 &&
+          narrow.every((r) => (r as Map)['waiter'] == 'Айгуль'),
+      narrow,
+    );
+
+    // --- Список официантов ---
+    var (wc, waiters) = await admin(
+      'GET',
+      '/api/admin/reviews/waiters?branch_id=$_branchId',
+      mine,
+    );
+    expect(
+      'имена с числом отзывов, без пустых',
+      wc == 200 &&
+          (waiters as List).map((w) => '${(w as Map)['waiter']}:${w['count']}')
+                  .join(',') ==
+              'Айгуль:3,Нурбек:2',
+      waiters,
+    );
+    (wc, waiters) = await admin(
+      'GET',
+      '/api/admin/reviews/waiters?branch_id=$_branchId&since=$yesterday',
+      mine,
+    );
+    expect(
+      'период отсекает имена из старого',
+      (waiters as List).map((w) => (w as Map)['waiter']).join(',') ==
+          'Айгуль,Нурбек',
+      waiters,
+    );
+    db.execute(
+      "insert into reviews (id, branch_id, rating, waiter) values "
+      "('alien-r', '$_alienId', 5, 'Чужой официант')",
+    );
+    (wc, waiters) = await admin(
+      'GET',
+      '/api/admin/reviews/waiters?branch_id=$_branchId',
+      mine,
+    );
+    expect(
+      'имя из чужого филиала не просочилось',
+      !(waiters as List).any((w) => (w as Map)['waiter'] == 'Чужой официант'),
+      waiters,
+    );
+    (wc, _) = await admin(
+      'GET',
+      '/api/admin/reviews/waiters?branch_id=$_alienId',
+      mine,
+    );
+    expect('чужой филиал — 404', wc == 404, wc);
+    final anonWaiters = await app(
+      Request(
+        'GET',
+        Uri.parse(
+          'http://localhost/api/admin/reviews/waiters?branch_id=$_branchId',
+        ),
+      ),
+    );
+    await anonWaiters.readAsString();
+    expect(
+      'без входа список имён не отдаётся',
+      anonWaiters.statusCode == 401,
+      anonWaiters.statusCode,
+    );
+
     // --- Право выдаёт только владелец платформы ---
     (code, _) = await admin('PATCH', '/api/super/branches/$_noRightId', mine, {
       'reviews_enabled': true,

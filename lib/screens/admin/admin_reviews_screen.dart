@@ -13,6 +13,32 @@ import '../../widgets/star_rating.dart';
 /// Править и удалять отзыв нельзя — в нём нечего менять, а кафе, которое
 /// стирает плохие отзывы, обманывает само себя. Старые уходят сами через
 /// 40 дней, и об этом сказано прямо под списком.
+/// Период отбора. Границу считает экран и присылает серверу готовой:
+/// «сегодня» — это сегодня по часам того, кто смотрит.
+enum _Period {
+  today('Сегодня'),
+  week('7 дней'),
+  month('30 дней'),
+  all('За всё время');
+
+  const _Period(this.label);
+  final String label;
+}
+
+/// Корзина оценок. «Плохие» в прежнем виде — это ровно `max_rating=2`,
+/// поэтому старый клиент продолжает работать без правок.
+enum _Bucket {
+  any('Любая оценка', null, null),
+  good('5 и 4', 4, null),
+  mid('3', 3, 3),
+  bad('2 и 1', null, 2);
+
+  const _Bucket(this.label, this.min, this.max);
+  final String label;
+  final int? min;
+  final int? max;
+}
+
 class AdminReviewsScreen extends StatefulWidget {
   /// Открыт ли этот раздел сейчас. `IndexedStack` в `admin_shell` держит все
   /// экраны живыми, поэтому без этого флага опрос сервера шёл бы и с других
@@ -39,8 +65,31 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
   bool _busy = false;
   String? _loadError;
 
-  /// Показывать только плохие (1–2 звезды): ради них этот экран и открывают
-  bool _onlyBad = false;
+  /// Отбор. Сервер считает все три: выборка ограничена сотней строк, и
+  /// отзывы за сегодня, плохие или про одного официанта иначе могли бы в
+  /// неё не попасть — а ради них этот экран и открывают
+  _Period _period = _Period.all;
+  _Bucket _bucket = _Bucket.any;
+  String? _waiter;
+
+  /// Кто упоминался в отзывах — для выбора официанта. Приходит отдельной
+  /// ручкой: список, собранный из загруженных отзывов, сам себя уничтожал
+  /// бы — выбрали официанта, и переключиться стало бы не на кого
+  List<Map<String, dynamic>> _waiters = const [];
+
+  bool get _filtered =>
+      _period != _Period.all || _bucket != _Bucket.any || _waiter != null;
+
+  /// Сколько строк просим. Больше двух сотен карточек никто не читает, а
+  /// ждать дольше — читают ещё меньше
+  static const _limit = 100;
+
+  /// Нажали, пока предыдущий запрос был в пути: повторим его в конце,
+  /// иначе отбор молча расходится с тем, что на экране
+  bool _again = false;
+
+  /// Поколение запроса: опоздавший ответ не должен перебить новый
+  int _gen = 0;
   Timer? _timer;
 
   @override
@@ -48,6 +97,7 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
     super.initState();
     currentBranch.addListener(_reload);
     _load();
+    _loadWaiters();
     _syncTimer();
   }
 
@@ -72,34 +122,105 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
     _timer = widget.active ? Timer.periodic(_poll, (_) => _load()) : null;
   }
 
-  void _reload() => _load();
+  void _reload() {
+    // Имена официантов принадлежат филиалу: при смене филиала выбор
+    // сбрасываем, а период и оценку оставляем — их смысл не меняется
+    _waiter = null;
+    _loadWaiters();
+    _load();
+  }
+
+  /// Смена отбора: перерисовать, отодвинуть опрос и перечитать список.
+  /// Опрос отодвигается, чтобы список не дёргался под руками
+  void _apply(VoidCallback change) {
+    setState(change);
+    _syncTimer();
+    _load();
+  }
+
+  void _reset() => _apply(() {
+    _period = _Period.all;
+    _bucket = _Bucket.any;
+    _waiter = null;
+  });
+
+  /// Нижняя граница периода в том виде, в каком SQLite пишет `created_at`,
+  /// то есть в UTC. Полночь берём местную: «сегодня» для кафе — это его
+  /// сегодня, а часового пояса кафе сервер не знает.
+  String? _since() {
+    final days = switch (_period) {
+      _Period.today => 1,
+      _Period.week => 7,
+      _Period.month => 30,
+      _Period.all => 0,
+    };
+    if (days == 0) return null;
+    final now = DateTime.now();
+    // Нормализация через конструктор, а не вычитание Duration: второе
+    // сдвигает на час на переходе времени. «7 дней» — сегодня и шесть
+    // предыдущих, иначе выборка на сутки шире подписи
+    final start = DateTime(now.year, now.month, now.day - (days - 1)).toUtc();
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${start.year}-${two(start.month)}-${two(start.day)} '
+        '${two(start.hour)}:${two(start.minute)}:${two(start.second)}';
+  }
 
   Future<void> _load() async {
     final branch = currentBranch.value;
-    if (branch == null || _busy) return;
+    if (branch == null) return;
+    if (_busy) {
+      _again = true;
+      return;
+    }
     _busy = true;
+    final gen = ++_gen;
     try {
-      // Фильтр считает сервер: при сотне строк в выборке плохие отзывы
-      // иначе могли бы в неё и не попасть
+      final since = _since();
       final rows = await api.list('/api/admin/reviews', {
         'branch_id': branch.id,
-        if (_onlyBad) 'max_rating': '2',
-        'limit': '100',
+        if (since != null) 'since': since,
+        if (_bucket.min != null) 'min_rating': '${_bucket.min}',
+        if (_bucket.max != null) 'max_rating': '${_bucket.max}',
+        if (_waiter != null) 'waiter': _waiter!,
+        'limit': '$_limit',
       });
-      if (!mounted) return;
+      if (!mounted || gen != _gen) return;
       setState(() {
         _reviews = rows;
         _loading = false;
         _loadError = null;
       });
     } on ApiException catch (e) {
-      if (!mounted) return;
+      if (!mounted || gen != _gen) return;
       setState(() {
         _loading = false;
         _loadError = e.message;
       });
     } finally {
       _busy = false;
+      if (_again) {
+        _again = false;
+        _load();
+      }
+    }
+  }
+
+  /// Список имён для выбора официанта. Из опроса не зовётся: новое имя —
+  /// событие редкое, а лишний запрос раз в две минуты с каждого открытого
+  /// планшета не нужен
+  Future<void> _loadWaiters() async {
+    final branch = currentBranch.value;
+    if (branch == null) return;
+    try {
+      final since = _since();
+      final rows = await api.list('/api/admin/reviews/waiters', {
+        'branch_id': branch.id,
+        if (since != null) 'since': since,
+      });
+      if (!mounted) return;
+      setState(() => _waiters = rows);
+    } on ApiException {
+      // Не вышло — меню останется прежним. Списку отзывов это не мешает
     }
   }
 
@@ -124,54 +245,136 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
     );
   }
 
-  Widget _toolbar() => Padding(
-    padding: const EdgeInsets.fromLTRB(24, 20, 24, 10),
-    child: Row(
-      children: [
-        Text(
-          'ОТЗЫВЫ',
-          style: GoogleFonts.manrope(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 1.5,
-          ),
-        ),
-        const SizedBox(width: 20),
-        ChoiceChip(
-          label: const Text('Все'),
-          selected: !_onlyBad,
-          onSelected: (_) {
-            setState(() => _onlyBad = false);
-            _load();
-          },
-        ),
-        const SizedBox(width: 8),
-        ChoiceChip(
-          label: const Text('Плохие'),
-          selected: _onlyBad,
-          onSelected: (_) {
-            setState(() => _onlyBad = true);
-            _load();
-          },
-        ),
-        const Spacer(),
-        if (_reviews.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: Text(
-              'Средняя по показанным: $_average (${_reviews.length})',
-              style: const TextStyle(color: Colors.white54, fontSize: 13),
+  Widget _toolbar() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+        child: Row(
+          children: [
+            Text(
+              'ОТЗЫВЫ',
+              style: GoogleFonts.manrope(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.5,
+              ),
             ),
-          ),
-        IconButton(
-          tooltip: 'Обновить',
-          onPressed: _load,
-          icon: const Icon(Icons.refresh, color: Colors.white54),
+            const Spacer(),
+            if (_reviews.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Text(
+                  _countLine,
+                  style: const TextStyle(color: Colors.white54, fontSize: 13),
+                ),
+              ),
+            IconButton(
+              tooltip: 'Обновить',
+              onPressed: () {
+                _loadWaiters();
+                _apply(() {});
+              },
+              icon: const Icon(Icons.refresh, color: Colors.white54),
+            ),
+          ],
         ),
-      ],
+      ),
+      // Один Wrap на все кнопки: на узком окне он переносит ряд, а Row
+      // упёрся бы в переполнение. Подписи групп не нужны — ни одно слово
+      // не повторяется: у периода «За всё время», у оценки «Любая оценка»
+      Padding(
+        padding: const EdgeInsets.fromLTRB(24, 10, 24, 10),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            for (final p in _Period.values)
+              _chip(p.label, _period == p, () => _apply(() {
+                _period = p;
+                // Период меняет и набор имён: уволившийся месяц назад не
+                // должен мешаться в выборе
+                _loadWaiters();
+              })),
+            _divider(),
+            for (final b in _Bucket.values)
+              _chip(b.label, _bucket == b, () => _apply(() => _bucket = b)),
+            _waiterMenu(),
+            if (_filtered)
+              TextButton(
+                onPressed: _reset,
+                child: const Text(
+                  'Сбросить',
+                  style: TextStyle(color: Colors.white54, fontSize: 13),
+                ),
+              ),
+          ],
+        ),
+      ),
+    ],
+  );
+
+  Widget _chip(String label, bool selected, VoidCallback onTap) => ChoiceChip(
+    label: Text(label),
+    selected: selected,
+    onSelected: (_) => onTap(),
+  );
+
+  /// Полоска между группами: после переноса ряда видно, где кончается
+  /// период и начинается оценка
+  Widget _divider() => Container(width: 1, height: 24, color: Colors.white24);
+
+  /// Официант — одна кнопка с меню, а не ряд чипсов: имён неизвестно
+  /// сколько, их пишет гость руками
+  Widget _waiterMenu() => PopupMenuButton<String?>(
+    tooltip: 'Официант',
+    color: _surface,
+    initialValue: _waiter,
+    onSelected: (v) => _apply(() => _waiter = v),
+    itemBuilder: (_) => [
+      const PopupMenuItem<String?>(
+        value: null,
+        child: Text(
+          'Все официанты',
+          style: TextStyle(color: Colors.white70, fontSize: 13),
+        ),
+      ),
+      for (final w in _waiters)
+        PopupMenuItem<String?>(
+          value: w['waiter'] as String?,
+          child: Text(
+            '${w['waiter']} · ${w['count']}',
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+          ),
+        ),
+    ],
+    child: Chip(
+      backgroundColor: _waiter == null ? null : _accent.withValues(alpha: 0.2),
+      label: Text(
+        'Официант: ${_waiter ?? 'все'}',
+        style: const TextStyle(fontSize: 13),
+      ),
+      avatar: const Icon(Icons.arrow_drop_down, size: 18),
     ),
   );
+
+  /// Что написано справа в заголовке.
+  ///
+  /// Средняя показывается только без отбора по оценке: средняя внутри
+  /// корзины — тавтология (у «2 и 1» она всегда около полутора), но стоит
+  /// рядом с кнопкой и читается как оценка кафе
+  String get _countLine => _bucket == _Bucket.any
+      ? 'Средняя по показанным: $_average (${_reviews.length})'
+      : 'Показано: ${_reviews.length}';
+
+  /// Чем сейчас сужен список — строкой, чтобы объяснить пустой экран
+  String get _filterLine => [
+    if (_period != _Period.all) _period.label,
+    if (_bucket != _Bucket.any) 'оценка ${_bucket.label}',
+    if (_waiter != null) _waiter!,
+  ].join(' · ');
 
   Widget _body() {
     if (_loading) {
@@ -187,19 +390,47 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
     }
     final allowed = currentBranch.value?.reviewsEnabled == true;
     if (_reviews.isEmpty) {
+      // Порядок важен: про невыданное право сказать нужнее, чем про отбор
+      if (!allowed) {
+        return const Center(
+          child: Padding(
+            padding: EdgeInsets.all(40),
+            child: Text(
+              'Отзывы этому филиалу не подключены — кнопки у гостя нет.\n'
+              'Подключение включают там же, где заводили кафе.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.orangeAccent, fontSize: 15),
+            ),
+          ),
+        );
+      }
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(40),
-          child: Text(
-            allowed
-                ? 'Отзывов пока нет.'
-                : 'Отзывы этому филиалу не подключены — кнопки у гостя нет.\n'
-                      'Подключение включают там же, где заводили кафе.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: allowed ? Colors.white38 : Colors.orangeAccent,
-              fontSize: 15,
-            ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _filtered ? 'Под этот отбор отзывов нет.' : 'Отзывов пока нет.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white38, fontSize: 15),
+              ),
+              // Здесь владелец и застревает, поэтому сброс — прямо тут, а
+              // не только наверху
+              if (_filtered) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _filterLine,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white24, fontSize: 13),
+                ),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: _reset,
+                  child: const Text('Показать все отзывы'),
+                ),
+              ],
+            ],
           ),
         ),
       );
@@ -212,12 +443,15 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
       separatorBuilder: (_, _) => const SizedBox(height: 12),
       itemBuilder: (context, i) => i < _reviews.length
           ? _card(_reviews[i])
-          : const Padding(
-              padding: EdgeInsets.only(top: 10),
+          : Padding(
+              padding: const EdgeInsets.only(top: 10),
               child: Text(
-                'Отзывы хранятся 40 дней, потом удаляются.',
+                _reviews.length < _limit
+                    ? 'Отзывы хранятся 40 дней, потом удаляются.'
+                    : 'Показаны последние $_limit — уточните период или '
+                          'оценку.\nОтзывы хранятся 40 дней, потом удаляются.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white24, fontSize: 13),
+                style: const TextStyle(color: Colors.white24, fontSize: 13),
               ),
             ),
     );

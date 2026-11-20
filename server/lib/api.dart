@@ -162,6 +162,9 @@ const _maxOrderQty = 99;
 /// Номер стола в отзыве: только цифры. Пусто — гость его не указал
 final _tableNo = RegExp(r'^\d*$');
 
+/// Нижняя граница отбора отзывов по времени: дата или дата со временем
+final _sinceFormat = RegExp(r'^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$');
+
 /// Код заказа: его придумывает клиент, сервер только проверяет вид
 final _orderCode = RegExp(r'^[A-Z0-9]{0,8}$');
 
@@ -326,6 +329,7 @@ class Api {
     r.post('/api/admin/products/copy', _copyProducts);
 
     r.get('/api/admin/reviews', _listReviews);
+    r.get('/api/admin/reviews/waiters', _listReviewWaiters);
     r.get('/api/admin/orders', _listOrders);
     r.patch('/api/admin/orders/<id>', _updateOrder);
 
@@ -1854,22 +1858,40 @@ class Api {
     final branch = _ownBranch(u, q['branch_id']);
     final where = StringBuffer('branch_id = ?');
     final args = <Object?>[branch['id']];
-    // Фильтр «плохие» считается на сервере, а не на экране: при пределе в
-    // сотню строк плохие отзывы иначе могли бы в выборку и не попасть — а
-    // ради них этот экран и открывают
-    final maxRating = q['max_rating'];
-    if (maxRating != null && maxRating.isNotEmpty) {
-      final n = int.tryParse(maxRating);
-      if (n == null || n < 1 || n > 5) {
-        throw ApiError(400, 'Оценка — число от 1 до 5');
-      }
+    // Весь отбор считает сервер, а не экран: выборка ограничена сотней
+    // строк, и отзывы за сегодня, плохие или про одного официанта иначе
+    // могли бы в неё не попасть — а ради них этот экран и открывают
+    final minRating = _ratingParam(q['min_rating']);
+    final maxRating = _ratingParam(q['max_rating']);
+    if (minRating != null && maxRating != null && minRating > maxRating) {
+      // Экран такого не шлёт; пустой список вместо ошибки потом некому
+      // было бы отлаживать
+      throw ApiError(400, 'Нижняя оценка выше верхней');
+    }
+    if (minRating != null) {
+      where.write(' and rating >= ?');
+      args.add(minRating);
+    }
+    if (maxRating != null) {
       where.write(' and rating <= ?');
-      args.add(n);
+      args.add(maxRating);
+    }
+    final since = q['since'];
+    if (since != null && since.isNotEmpty) {
+      where.write(' and created_at >= ?');
+      args.add(_sinceParam(since));
     }
     final before = q['before'];
     if (before != null && before.isNotEmpty) {
       where.write(' and created_at < ?');
       args.add(before);
+    }
+    // Точное равенство, не like: `%` и `_` из текста гостя получили бы
+    // смысл подстановок, а имена всё равно берутся из нашего же списка
+    final waiter = (q['waiter'] ?? '').trim();
+    if (waiter.isNotEmpty) {
+      where.write(' and waiter = ?');
+      args.add(waiter);
     }
     // Предел обязателен — по той же причине, что и в списке заказов
     args.add((int.tryParse(q['limit'] ?? '') ?? 50).clamp(1, 200));
@@ -1882,6 +1904,58 @@ class Api {
         ),
       ),
     );
+  }
+
+  /// Оценка из параметра отбора: пусто — отбора нет, мусор — 400.
+  static int? _ratingParam(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    final n = int.tryParse(raw);
+    if (n == null || n < 1 || n > 5) {
+      throw ApiError(400, 'Оценка — число от 1 до 5');
+    }
+    return n;
+  }
+
+  /// Нижняя граница по времени. Присылает её клиент уже в UTC: «сегодня» —
+  /// это сегодня по часам кафе, а часового пояса кафе сервер не знает.
+  ///
+  /// Сравнение строк тут верное: SQLite пишет `YYYY-MM-DD HH:MM:SS`, и
+  /// лексикографический порядок у таких строк совпадает с хронологическим.
+  static String _sinceParam(String raw) {
+    if (!_sinceFormat.hasMatch(raw)) {
+      throw ApiError(400, 'Дата — ГГГГ-ММ-ДД');
+    }
+    return raw;
+  }
+
+  /// Кто упоминался в отзывах филиала и сколько раз — для выбора официанта
+  /// в админке. Готового списка сотрудников в базе нет: имя пишет гость
+  /// руками, поэтому собираем его из самих отзывов.
+  ///
+  /// Отдельной ручкой, а не из загруженных отзывов: иначе список сам себя
+  /// уничтожал бы — выбрали официанта, сервер вернул только его отзывы, и
+  /// переключиться стало бы не на кого.
+  ///
+  /// Период учитываем, оценку — нет: отбор по оценке спрятал бы
+  /// официантов без плохих отзывов, то есть ровно тех, с кем сравнивают.
+  Response _listReviewWaiters(Request req) {
+    final u = _cafeAdmin(req);
+    final q = req.url.queryParameters;
+    final branch = _ownBranch(u, q['branch_id']);
+    final args = <Object?>[branch['id']];
+    var since = '';
+    final raw = q['since'];
+    if (raw != null && raw.isNotEmpty) {
+      since = ' and created_at >= ?';
+      args.add(_sinceParam(raw));
+    }
+    final rows = db.select('''
+      select waiter, count(*) as n from reviews
+       where branch_id = ? and waiter <> ''$since
+       group by waiter order by n desc, waiter limit 100''', args);
+    return _json([
+      for (final r in rows) {'waiter': r['waiter'], 'count': r['n']},
+    ]);
   }
 
   /// Загрузка картинки или 3D-модели: тело запроса — сами байты, расширение
