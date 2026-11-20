@@ -34,8 +34,12 @@ Future<void> _back(WidgetTester tester) async {
   await tester.pump(const Duration(seconds: 1));
 }
 
-Future<void> _openMenu(WidgetTester tester, {required bool fromCatalog}) async {
-  tester.view.physicalSize = const Size(900, 1600);
+Future<void> _openMenu(
+  WidgetTester tester, {
+  required bool fromCatalog,
+  Size size = const Size(900, 1600),
+}) async {
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
 
@@ -77,6 +81,34 @@ void main() {
     expect(currentBranch.value, isNull);
     expect(openedFromCatalog.value, isFalse);
     expect(menuStore.slug, isNull);
+  });
+
+  // Кнопка «Все кафе» — тот же выход, что и «назад», поэтому и стоять
+  // должна там, где её ищут: наверху, над названием кафе, а не в ряду
+  // мелких иконок под ним
+  // 400×900 — телефон: по умолчанию здесь 900×1600, а это, вопреки виду,
+  // широкая вёрстка (порог — 800 по ширине), и мобильную шапку так не
+  // проверить
+  testWidgets('«Все кафе» — над названием кафе, узкий экран', (tester) async {
+    await _openMenu(tester, fromCatalog: true, size: const Size(400, 900));
+
+    expect(
+      tester.getTopLeft(find.text('Все кафе')).dy,
+      lessThan(tester.getTopLeft(find.text('Демо-кафе')).dy),
+    );
+  });
+
+  testWidgets('«Все кафе» — над названием кафе, широкий экран', (tester) async {
+    await _openMenu(
+      tester,
+      fromCatalog: true,
+      size: const Size(1600, 1000),
+    );
+
+    expect(
+      tester.getTopLeft(find.text('Все кафе')).dy,
+      lessThan(tester.getTopLeft(find.text('Демо-кафе')).dy),
+    );
   });
 
   testWidgets('пришёл по QR-коду: «назад» меню не трогает', (tester) async {

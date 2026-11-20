@@ -313,6 +313,23 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     );
   }
 
+  /// Тот же возврат, но отдельной строкой наверху — над логотипом и
+  /// названием кафе. Гость, пришедший из каталога, ищет выход там же, где
+  /// кнопку «назад» в браузере, а не среди мелких иконок под названием.
+  ///
+  /// У пришедшего по QR кнопки нет вовсе, и пустой строки от неё тоже не
+  /// остаётся: отступ живёт внутри
+  Widget _catalogTopBar(ThemeConfig config) {
+    if (!openedFromCatalog.value) return const SizedBox.shrink();
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: _catalogButton(config),
+      ),
+    );
+  }
+
   Widget _searchButton(ThemeConfig config) {
     return IconButton(
       tooltip: AppLocalizations.of(context).search,
@@ -448,6 +465,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          _catalogTopBar(config),
+
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
@@ -508,7 +527,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
             crossAxisAlignment: WrapCrossAlignment.center,
             spacing: 4,
             children: [
-              _catalogButton(config),
               LangSwitcher(config: config),
               _searchButton(config),
               _refreshButton(config),
@@ -586,6 +604,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
       ),
       child: Column(
         children: [
+          _catalogTopBar(config),
+
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -647,8 +667,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              _catalogButton(config),
-              const Spacer(),
               LangSwitcher(config: config),
               const SizedBox(width: 8),
               _searchButton(config),
