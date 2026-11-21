@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../api/api_client.dart';
 import '../../config/current_branch.dart';
+import '../../responsive.dart';
 import 'admin_filters.dart';
 import '../../models/json_read.dart';
 import '../../models/product.dart' show money;
@@ -188,18 +189,21 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Порог от экрана, а не от своих ограничений: в широкой вёрстке часть
+    // ширины забирает боковая колонка оболочки
+    final wide = Responsive.isWide(MediaQuery.sizeOf(context));
     return Container(
       color: _bg,
       child: Column(
         children: [
-          _toolbar(),
+          _toolbar(wide),
           Expanded(child: _body()),
         ],
       ),
     );
   }
 
-  Widget _toolbar() => Column(
+  Widget _toolbar(bool wide) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       // Wrap, а не Row со Spacer: на мониторе выглядит так же, а на
@@ -254,20 +258,51 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
       // Один Wrap на все кнопки: на узком окне он переносит ряд, а Row
       // упёрся бы в переполнение
       Padding(
-        padding: const EdgeInsets.fromLTRB(24, 10, 24, 10),
+        padding: EdgeInsets.fromLTRB(24, 10, 24, wide ? 10 : 6),
         child: Wrap(
           spacing: 8,
           runSpacing: 8,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            for (final p in AdminPeriod.values)
-              _chip(p.label, _period == p, () => _apply(() => _period = p)),
-            _divider(),
-            for (final s in _Status.values)
-              _chip(s.label, _status == s, () => _apply(() => _status = s)),
-            _divider(),
-            for (final t in _Type.values)
-              _chip(t.label, _type == t, () => _apply(() => _type = t)),
+            // На мониторе весь отбор виден сразу — кнопками подряд. На
+            // телефоне те же девять кнопок занимают четыре ряда и съедают
+            // пол-экрана у списка, поэтому там каждая группа свёрнута в
+            // одну кнопку с меню
+            if (wide) ...[
+              for (final p in AdminPeriod.values)
+                _chip(p.label, _period == p, () => _apply(() => _period = p)),
+              _divider(),
+              for (final s in _Status.values)
+                _chip(s.label, _status == s, () => _apply(() => _status = s)),
+              _divider(),
+              for (final t in _Type.values)
+                _chip(t.label, _type == t, () => _apply(() => _type = t)),
+            ] else ...[
+              _menu<AdminPeriod>(
+                'Период',
+                AdminPeriod.values,
+                _period,
+                (p) => p.label,
+                _period != AdminPeriod.all,
+                (p) => _period = p,
+              ),
+              _menu<_Status>(
+                'Отметка',
+                _Status.values,
+                _status,
+                (s) => s.label,
+                _status != _Status.fresh,
+                (s) => _status = s,
+              ),
+              _menu<_Type>(
+                'Способ получения',
+                _Type.values,
+                _type,
+                (t) => t.label,
+                _type != _Type.any,
+                (t) => _type = t,
+              ),
+            ],
             if (_filtered)
               TextButton(
                 onPressed: _reset,
@@ -280,6 +315,41 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
         ),
       ),
     ],
+  );
+
+  /// Группа отбора одной кнопкой: подпись показывает выбранное, меню —
+  /// остальное. Выбранный пункт в меню подсвечен, и кнопка тоже, пока
+  /// отбор не сброшен, — иначе непонятно, почему список короткий.
+  Widget _menu<T>(
+    String tooltip,
+    List<T> values,
+    T current,
+    String Function(T) labelOf,
+    bool active,
+    void Function(T) pick,
+  ) => PopupMenuButton<T>(
+    tooltip: tooltip,
+    color: _surface,
+    initialValue: current,
+    onSelected: (v) => _apply(() => pick(v)),
+    itemBuilder: (_) => [
+      for (final v in values)
+        PopupMenuItem<T>(
+          value: v,
+          child: Text(
+            labelOf(v),
+            style: TextStyle(
+              color: v == current ? _accent : Colors.white,
+              fontSize: 13,
+            ),
+          ),
+        ),
+    ],
+    child: Chip(
+      backgroundColor: active ? _accent.withValues(alpha: 0.2) : null,
+      label: Text(labelOf(current), style: const TextStyle(fontSize: 13)),
+      avatar: const Icon(Icons.arrow_drop_down, size: 18),
+    ),
   );
 
   Widget _chip(String label, bool selected, VoidCallback onTap) => ChoiceChip(
