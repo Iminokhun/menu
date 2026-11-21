@@ -58,10 +58,24 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     currentBranch.addListener(_onBranchChanged);
     menuStore.data.addListener(_applyMenu);
     menuStore.refreshing.addListener(_rebuild);
+    cartDropped.addListener(_tellCartDropped);
     // Первый расчёт — без setState: экран ещё строится
     _applyMenu();
     _onBranchChanged();
     _initialized = true;
+    // Корзину могли обнулить до того, как этот экран появился: гость пришёл
+    // из каталога в другое кафе, и филиал открылся раньше первого кадра
+    WidgetsBinding.instance.addPostFrameCallback((_) => _tellCartDropped());
+  }
+
+  /// Сказать гостю, что корзина обнулена, и опустить флаг — один раз на
+  /// переход, а не на каждую перестройку экрана.
+  void _tellCartDropped() {
+    if (!cartDropped.value || !mounted) return;
+    cartDropped.value = false;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(AppLocalizations.of(context).cartCleared)),
+    );
   }
 
   /// До конца initState перестраивать экран нельзя и не нужно
@@ -90,6 +104,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     currentBranch.removeListener(_onBranchChanged);
     menuStore.data.removeListener(_applyMenu);
     menuStore.refreshing.removeListener(_rebuild);
+    cartDropped.removeListener(_tellCartDropped);
     super.dispose();
   }
 

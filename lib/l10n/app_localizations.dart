@@ -48,6 +48,7 @@ class AppLocalizations {
       'orderTotalChanged': 'Цены изменились: в кафе заказ стоит %s',
       'cartItemLimit': 'Больше %d порций одного блюда — позвоните в кафе',
       'cartLinesLimit': 'В заказе не больше %d разных блюд',
+      'cartCleared': 'Это другое кафе — корзина очищена',
       'close': 'Закрыть',
       // Карточка товара
       'add': 'ДОБАВИТЬ',
@@ -112,6 +113,7 @@ class AppLocalizations {
       'orderTotalChanged': 'Prices have changed: at the cafe the order costs %s',
       'cartItemLimit': 'More than %d servings of one dish — please call the cafe',
       'cartLinesLimit': 'An order holds at most %d different dishes',
+      'cartCleared': 'Another cafe — your cart has been cleared',
       'close': 'Close',
       'add': 'ADD',
       'som': 'som',
@@ -173,6 +175,7 @@ class AppLocalizations {
       'orderTotalChanged': 'Fiyatlar değişti: kafede sipariş %s tutuyor',
       'cartItemLimit': 'Bir yemekten %d porsiyondan fazlası için kafeyi arayın',
       'cartLinesLimit': 'Bir siparişte en fazla %d farklı yemek olur',
+      'cartCleared': 'Burası başka bir kafe — sepetiniz boşaltıldı',
       'close': 'Kapat',
       'add': 'EKLE',
       'som': 'som',
@@ -234,6 +237,7 @@ class AppLocalizations {
       'orderTotalChanged': 'Баалар өзгөрдү: кафеде заказдын баасы %s',
       'cartItemLimit': 'Бир тамактан %d порциядан көп болсо — кафеге чалыңыз',
       'cartLinesLimit': 'Бир заказда %d түрдөн ашык тамак болбойт',
+      'cartCleared': 'Бул башка кафе — себет бошотулду',
       'close': 'Жабуу',
       'add': 'КОШУУ',
       'som': 'сом',
@@ -295,6 +299,7 @@ class AppLocalizations {
       'orderTotalChanged': 'Бағалар өзгерді: кафеде тапсырыс құны %s',
       'cartItemLimit': 'Бір тағамнан %d порциядан көп болса — кафеге қоңырау шалыңыз',
       'cartLinesLimit': 'Бір тапсырыста %d түрден артық тағам болмайды',
+      'cartCleared': 'Бұл басқа кафе — себет босатылды',
       'close': 'Жабу',
       'add': 'ҚОСУ',
       'som': 'сом',
@@ -356,6 +361,7 @@ class AppLocalizations {
       'orderTotalChanged': 'Narxlar o‘zgardi: kafeda buyurtma narxi %s',
       'cartItemLimit': 'Bitta taomdan %d porsiyadan ko‘p bo‘lsa — kafega qo‘ng‘iroq qiling',
       'cartLinesLimit': 'Bitta buyurtmada %d xildan ortiq taom bo‘lmaydi',
+      'cartCleared': 'Bu boshqa kafe — savat bo‘shatildi',
       'close': 'Yopish',
       'add': 'QOʻSHISH',
       'som': 'som',
@@ -417,6 +423,7 @@ class AppLocalizations {
       'orderTotalChanged': '价格已变动：在餐厅该订单为 %s',
       'cartItemLimit': '同一道菜超过 %d 份，请致电餐厅',
       'cartLinesLimit': '一个订单最多 %d 种菜品',
+      'cartCleared': '这是另一家咖啡馆 — 购物车已清空',
       'close': '关闭',
       'add': '添加',
       'som': '索姆',
@@ -478,6 +485,7 @@ class AppLocalizations {
       'orderTotalChanged': '가격이 변경되었습니다: 카페 기준 주문 금액은 %s',
       'cartItemLimit': '같은 메뉴 %d인분을 넘으면 카페로 전화해 주세요',
       'cartLinesLimit': '한 주문에는 메뉴를 최대 %d가지까지 담을 수 있습니다',
+      'cartCleared': '다른 카페입니다 — 장바구니를 비웠습니다',
       'close': '닫기',
       'add': '담기',
       'som': '솜',
@@ -539,6 +547,7 @@ class AppLocalizations {
       'orderTotalChanged': '価格が変わりました。店での注文金額は %s です',
       'cartItemLimit': '同じ料理が %d 人前を超える場合はお店にお電話ください',
       'cartLinesLimit': '1件の注文に入れられる料理は %d 種類までです',
+      'cartCleared': '別のカフェです — カートを空にしました',
       'close': '閉じる',
       'add': '追加',
       'som': 'ソム',
@@ -600,6 +609,7 @@ class AppLocalizations {
       'orderTotalChanged': 'Die Preise haben sich geändert: im Café kostet die Bestellung %s',
       'cartItemLimit': 'Mehr als %d Portionen eines Gerichts — bitte im Café anrufen',
       'cartLinesLimit': 'Eine Bestellung fasst höchstens %d verschiedene Gerichte',
+      'cartCleared': 'Anderes Café — Ihr Warenkorb wurde geleert',
       'close': 'Schließen',
       'add': 'HINZUFÜGEN',
       'som': 'Som',
@@ -661,6 +671,7 @@ class AppLocalizations {
       'orderTotalChanged': 'Les prix ont changé : au café la commande coûte %s',
       'cartItemLimit': 'Plus de %d portions d’un même plat — appelez le café',
       'cartLinesLimit': 'Une commande contient au plus %d plats différents',
+      'cartCleared': 'Autre café — votre panier a été vidé',
       'close': 'Fermer',
       'add': 'AJOUTER',
       'som': 'som',
@@ -722,6 +733,7 @@ class AppLocalizations {
       'orderTotalChanged': 'Los precios han cambiado: en el café el pedido cuesta %s',
       'cartItemLimit': 'Más de %d raciones de un plato — llame al café',
       'cartLinesLimit': 'Un pedido admite como máximo %d platos distintos',
+      'cartCleared': 'Otro café — tu carrito se ha vaciado',
       'close': 'Cerrar',
       'add': 'AÑADIR',
       'som': 'som',
@@ -802,6 +814,7 @@ class AppLocalizations {
   String get orderTotalChanged => get('orderTotalChanged');
   String get cartItemLimit => get('cartItemLimit');
   String get cartLinesLimit => get('cartLinesLimit');
+  String get cartCleared => get('cartCleared');
   String get close => get('close');
   String get add => get('add');
   String get som => get('som');

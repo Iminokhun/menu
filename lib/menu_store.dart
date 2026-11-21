@@ -70,6 +70,8 @@ class MenuStore {
   /// Открыть филиал: сохранённая копия показывается сразу, свежее меню
   /// догружается следом. Без копии — ждём сервер.
   Future<void> open(String slug) async {
+    // Корзина принадлежит филиалу: в другом кафе её блюд нет в меню
+    bindCartToBranch(slug);
     _slug = slug;
     data.value = await _readCache(slug);
     if (data.value != null) {
