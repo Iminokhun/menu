@@ -617,9 +617,14 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   }
 
   Widget _buildMobileHeader(ThemeConfig config) {
+    // Отступ сверху рассчитан на название кафе первой строкой. Когда над
+    // ним стоит «Все кафе», столько места не нужно: кнопка отодвигала бы
+    // название вниз, а сама висела бы в пустоте. Название при этом
+    // остаётся примерно там же, где было.
+    final top = openedFromCatalog.value ? 18.0 : 60.0;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.only(top: 60, bottom: 20, left: 20, right: 20),
+      padding: EdgeInsets.only(top: top, bottom: 20, left: 20, right: 20),
       decoration: BoxDecoration(
         color: config.glass,
         boxShadow: [
