@@ -30,10 +30,20 @@ late List<Map<String, Object?>> reviews;
 
 Map<String, String> get lastQuery => requests.last.queryParameters;
 
-Future<void> _open(WidgetTester tester) async {
-  tester.view.physicalSize = const Size(1400, 1000);
+Future<void> _open(
+  WidgetTester tester, {
+  Size size = const Size(1400, 1000),
+}) async {
+  // Размер задаём дважды: view.physicalSize видит MediaQuery (от него
+  // зависит выбор вёрстки), а setSurfaceSize — слой всплывающих меню.
+  // С одним только physicalSize меню открывалось за левым краем экрана
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
-  addTearDown(tester.view.reset);
+  await tester.binding.setSurfaceSize(size);
+  addTearDown(() async {
+    tester.view.reset();
+    await tester.binding.setSurfaceSize(null);
+  });
 
   requests = [];
   reviews = [];
@@ -66,8 +76,42 @@ Future<void> _tap(WidgetTester tester, String label) async {
   tester.takeException();
 }
 
+/// Нажать и дождаться, пока всё доедет: всплывающее меню открывается
+/// анимацией, и до её конца пункт не принимает нажатий.
+Future<void> _tapSettle(WidgetTester tester, String label) async {
+  await tester.tap(find.text(label).last);
+  await tester.pumpAndSettle();
+  tester.takeException();
+}
+
 void main() {
   setUpAll(() => GoogleFonts.config.allowRuntimeFetching = false);
+
+  // На телефоне восемь кнопок отбора заняли бы три ряда, поэтому период и
+  // оценка свёрнуты в кнопки с меню — как официант. Проверяем, что отбор
+  // от этого не изменился: выбор уходит на сервер теми же параметрами
+  testWidgets('телефон: отбор выбирается в меню', (tester) async {
+    await _open(tester, size: const Size(360, 800));
+    // Свёрнутый вид: отдельных кнопок «5 и 4» и «Сегодня» нет
+    expect(find.text('5 и 4'), findsNothing);
+    expect(find.text('Сегодня'), findsNothing);
+    expect(find.text('Любая оценка'), findsOneWidget);
+
+    await _tapSettle(tester, 'Любая оценка');
+    await _tapSettle(tester, '2 и 1');
+    expect(lastQuery['max_rating'], '2');
+    // На кнопке видно, что выбрано: «3» или «2 и 1» сами по себе непонятны
+    expect(find.text('Оценка: 2 и 1'), findsOneWidget);
+
+    await _tapSettle(tester, 'За всё время');
+    await _tapSettle(tester, '7 дней');
+    expect(lastQuery.containsKey('since'), isTrue);
+    expect(lastQuery['max_rating'], '2');
+
+    await _tapSettle(tester, 'Сбросить');
+    expect(lastQuery.containsKey('since'), isFalse);
+    expect(lastQuery.containsKey('max_rating'), isFalse);
+  });
 
   testWidgets('без отбора лишних параметров в запросе нет', (tester) async {
     await _open(tester);

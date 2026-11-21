@@ -275,26 +275,46 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
       // упёрся бы в переполнение. Подписи групп не нужны — ни одно слово
       // не повторяется: у периода «За всё время», у оценки «Любая оценка»
       Padding(
-        padding: const EdgeInsets.fromLTRB(24, 10, 24, 10),
+        padding: EdgeInsets.fromLTRB(24, 10, 24, wide ? 10 : 6),
         child: Wrap(
           spacing: 8,
           runSpacing: 8,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            for (final p in AdminPeriod.values)
-              _chip(
-                p.label,
-                _period == p,
-                () => _apply(() {
-                  _period = p;
-                  // Период меняет и набор имён: уволившийся месяц назад не
-                  // должен мешаться в выборе
-                  _loadWaiters();
-                }),
+            // На мониторе весь отбор виден сразу — кнопками подряд. На
+            // телефоне восемь кнопок занимают три ряда и съедают пол-экрана
+            // у списка, поэтому там каждая группа свёрнута в одну кнопку с
+            // меню — как официант, у которого так было с самого начала
+            if (wide) ...[
+              for (final p in AdminPeriod.values)
+                _chip(p.label, _period == p, () => _pickPeriod(p)),
+              _divider(),
+              for (final b in _Bucket.values)
+                _chip(b.label, _bucket == b, () => _apply(() => _bucket = b)),
+            ] else ...[
+              _menu<AdminPeriod>(
+                'Период',
+                AdminPeriod.values,
+                _period,
+                (p) => p.label,
+                _period.label,
+                _period != AdminPeriod.all,
+                _pickPeriod,
               ),
-            _divider(),
-            for (final b in _Bucket.values)
-              _chip(b.label, _bucket == b, () => _apply(() => _bucket = b)),
+              _menu<_Bucket>(
+                'Оценка',
+                _Bucket.values,
+                _bucket,
+                (b) => b.label,
+                // «3» на кнопке само по себе непонятно, в отличие от
+                // ряда чипсов, где рядом стоят «5 и 4» и «2 и 1»
+                _bucket == _Bucket.any
+                    ? _Bucket.any.label
+                    : 'Оценка: ${_bucket.label}',
+                _bucket != _Bucket.any,
+                (b) => _apply(() => _bucket = b),
+              ),
+            ],
             _waiterMenu(),
             if (_filtered)
               TextButton(
@@ -308,6 +328,49 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
         ),
       ),
     ],
+  );
+
+  /// Период меняет и набор имён: уволившийся месяц назад не должен
+  /// мешаться в выборе официанта
+  void _pickPeriod(AdminPeriod p) => _apply(() {
+    _period = p;
+    _loadWaiters();
+  });
+
+  /// Группа отбора одной кнопкой: подпись показывает выбранное, меню —
+  /// остальное. Выбранный пункт подсвечен, и кнопка тоже, пока отбор не
+  /// сброшен, — иначе непонятно, почему список короткий.
+  Widget _menu<T>(
+    String tooltip,
+    List<T> values,
+    T current,
+    String Function(T) labelOf,
+    String buttonLabel,
+    bool active,
+    void Function(T) pick,
+  ) => PopupMenuButton<T>(
+    tooltip: tooltip,
+    color: _surface,
+    initialValue: current,
+    onSelected: pick,
+    itemBuilder: (_) => [
+      for (final v in values)
+        PopupMenuItem<T>(
+          value: v,
+          child: Text(
+            labelOf(v),
+            style: TextStyle(
+              color: v == current ? _accent : Colors.white,
+              fontSize: 13,
+            ),
+          ),
+        ),
+    ],
+    child: Chip(
+      backgroundColor: active ? _accent.withValues(alpha: 0.2) : null,
+      label: Text(buttonLabel, style: const TextStyle(fontSize: 13)),
+      avatar: const Icon(Icons.arrow_drop_down, size: 18),
+    ),
   );
 
   Widget _chip(String label, bool selected, VoidCallback onTap) => ChoiceChip(
