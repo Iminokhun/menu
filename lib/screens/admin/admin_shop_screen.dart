@@ -1,9 +1,12 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../../api/api_client.dart';
 import '../../config/current_branch.dart';
+import '../../responsive.dart';
 import '../../image_upload.dart';
 import '../../l10n/languages.dart';
 import '../../models/branch.dart';
@@ -294,6 +297,7 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
   }
 
   Widget _languagesCard() {
+    final wide = Responsive.isWide(MediaQuery.sizeOf(context));
     final available = [
       for (final l in menuLanguages)
         if (!_languages.contains(l.code)) l,
@@ -337,15 +341,32 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
                       child: const Text('основной', style: TextStyle(color: _accent, fontSize: 12)),
                     )
                   else ...[
-                    TextButton(
-                      onPressed: _savingLanguages
-                          ? null
-                          : () => _saveLanguages([
-                                code,
-                                ..._languages.where((c) => c != code),
-                              ]),
-                      child: const Text('сделать основным', style: TextStyle(color: Colors.white54, fontSize: 12)),
-                    ),
+                    // На телефоне подпись не помещается рядом с названием
+                    // языка — остаётся звёздочка с подсказкой
+                    if (wide)
+                      TextButton(
+                        onPressed: _savingLanguages
+                            ? null
+                            : () => _saveLanguages([
+                                  code,
+                                  ..._languages.where((c) => c != code),
+                                ]),
+                        child: const Text('сделать основным',
+                            style: TextStyle(
+                                color: Colors.white54, fontSize: 12)),
+                      )
+                    else
+                      IconButton(
+                        icon: const Icon(Icons.star_outline,
+                            color: Colors.white54, size: 18),
+                        tooltip: 'Сделать основным',
+                        onPressed: _savingLanguages
+                            ? null
+                            : () => _saveLanguages([
+                                  code,
+                                  ..._languages.where((c) => c != code),
+                                ]),
+                      ),
                     IconButton(
                       icon: const Icon(Icons.close, color: Colors.white38, size: 18),
                       tooltip: 'Убрать язык',
@@ -473,10 +494,14 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
           return AlertDialog(
             backgroundColor: _surface,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            // scrollable: с поднятой клавиатурой форму иначе не докрутить
+            // до кнопки — а здесь поле с autofocus, клавиатура встаёт сразу
+            scrollable: true,
+            insetPadding: Responsive.dialogPadding(MediaQuery.sizeOf(ctx)),
             title: const Text('Новый филиал',
                 style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             content: SizedBox(
-              width: 440,
+              width: Responsive.dialogWidth(MediaQuery.sizeOf(ctx), 440, chrome: 48),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -633,10 +658,13 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
           return AlertDialog(
             backgroundColor: _surface,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            // Подтверждение набирают с клавиатурой — см. «Новый филиал»
+            scrollable: true,
+            insetPadding: Responsive.dialogPadding(MediaQuery.sizeOf(ctx)),
             title: const Text('Удалить филиал?',
                 style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             content: SizedBox(
-              width: 440,
+              width: Responsive.dialogWidth(MediaQuery.sizeOf(ctx), 440, chrome: 48),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1020,28 +1048,34 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
             ),
           ],
           const SizedBox(height: 16),
-          Center(
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
+          // Размер кода считаем от ширины карточки: 160 плюс белые поля
+          // не влезают в телефон, а резать QR нельзя — его не прочитают
+          LayoutBuilder(builder: (context, box) {
+            final side = math.min(160.0, box.maxWidth - 24);
+            return Center(
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: link.isEmpty
+                    ? SizedBox(
+                        width: side,
+                        height: side,
+                        child: const Icon(Icons.qr_code_2,
+                            size: 70, color: Colors.black26),
+                      )
+                    : QrImageView(
+                        data: link,
+                        version: QrVersions.auto,
+                        size: side,
+                        padding: EdgeInsets.zero,
+                        backgroundColor: Colors.white,
+                      ),
               ),
-              child: link.isEmpty
-                  ? const SizedBox(
-                      width: 160,
-                      height: 160,
-                      child: Icon(Icons.qr_code_2, size: 70, color: Colors.black26),
-                    )
-                  : QrImageView(
-                      data: link,
-                      version: QrVersions.auto,
-                      size: 160,
-                      padding: EdgeInsets.zero,
-                      backgroundColor: Colors.white,
-                    ),
-            ),
-          ),
+            );
+          }),
           const SizedBox(height: 16),
           Row(
             children: [
@@ -1155,6 +1189,9 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
   @override
   Widget build(BuildContext context) {
     final branch = currentBranch.value;
+    // Порог от экрана, а не от своих ограничений: в широкой вёрстке часть
+    // ширины забирает боковая колонка оболочки
+    final wide = Responsive.isWide(MediaQuery.sizeOf(context));
 
     return Scaffold(
       backgroundColor: _bg,
@@ -1209,7 +1246,7 @@ class _AdminShopScreenState extends State<AdminShopScreen> {
               : _loadError != null
                   ? _buildLoadError()
                   : SingleChildScrollView(
-                  padding: const EdgeInsets.all(30),
+                  padding: EdgeInsets.all(wide ? 30 : 16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [

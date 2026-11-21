@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import '../responsive.dart';
 import '../config/server_config.dart';
 
 /// Вход по логину и паролю. Возвращает [Me] вошедшего или null при отмене.
@@ -101,8 +102,9 @@ class _AdminLoginDialogState extends State<AdminLoginDialog> {
               style: TextStyle(color: Colors.white, fontSize: 16)),
         ],
       ),
+      insetPadding: Responsive.dialogPadding(MediaQuery.sizeOf(context)),
       content: SizedBox(
-        width: 340,
+        width: Responsive.dialogWidth(MediaQuery.sizeOf(context), 340, chrome: 48),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

@@ -1,8 +1,11 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../api/api_client.dart';
 import '../../config/current_branch.dart';
+import '../../responsive.dart';
 import '../../image_upload.dart';
 import '../../models/branch.dart';
 import '../../theme/theme_config.dart';
@@ -174,6 +177,9 @@ class _AdminStyleScreenState extends State<AdminStyleScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Порог от экрана, а не от своих ограничений: в широкой вёрстке часть
+    // ширины забирает боковая колонка оболочки
+    final wide = Responsive.isWide(MediaQuery.sizeOf(context));
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(
@@ -201,7 +207,8 @@ class _AdminStyleScreenState extends State<AdminStyleScreen> {
                   children: [
                     Expanded(
                       child: ListView(
-                        padding: const EdgeInsets.fromLTRB(30, 24, 30, 30),
+                        padding: EdgeInsets.fromLTRB(
+                            wide ? 30 : 16, 24, wide ? 30 : 16, 30),
                         children: [
                           _Preview(style: _draft, cafeName: _branchName),
                           const SizedBox(height: 30),
@@ -228,7 +235,7 @@ class _AdminStyleScreenState extends State<AdminStyleScreen> {
                         ],
                       ),
                     ),
-                    _saveBar(),
+                    _saveBar(wide),
                   ],
                 ),
     );
@@ -487,9 +494,9 @@ class _AdminStyleScreenState extends State<AdminStyleScreen> {
     );
   }
 
-  Widget _saveBar() {
+  Widget _saveBar(bool wide) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(30, 12, 30, 20),
+      padding: EdgeInsets.fromLTRB(wide ? 30 : 16, 12, wide ? 30 : 16, 20),
       decoration: BoxDecoration(
         color: _surface,
         border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
@@ -498,7 +505,7 @@ class _AdminStyleScreenState extends State<AdminStyleScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (_branches.length > 1) ...[
-            _targetChoice(),
+            _targetChoice(wide),
             const SizedBox(height: 12),
           ],
           SizedBox(
@@ -523,8 +530,12 @@ class _AdminStyleScreenState extends State<AdminStyleScreen> {
                     : !_changed
                         ? 'СОХРАНЕНО'
                         : _toAll
-                            ? 'СОХРАНИТЬ ДЛЯ ВСЕХ ФИЛИАЛОВ'
-                            : 'СОХРАНИТЬ',
+                              // На телефоне длинная подпись переносится в
+                              // две строки и кнопка теряет вид
+                              ? (wide
+                                  ? 'СОХРАНИТЬ ДЛЯ ВСЕХ ФИЛИАЛОВ'
+                                  : 'СОХРАНИТЬ ВЕЗДЕ')
+                              : 'СОХРАНИТЬ',
                 style: GoogleFonts.manrope(fontWeight: FontWeight.w800, letterSpacing: 1),
               ),
             ),
@@ -535,11 +546,14 @@ class _AdminStyleScreenState extends State<AdminStyleScreen> {
   }
 
   /// Куда сохранить: только в выбранный филиал или во все филиалы кафе.
-  Widget _targetChoice() {
+  Widget _targetChoice(bool wide) {
     Widget option(bool all, String text) {
       final active = _toAll == all;
-      return Expanded(
-        child: GestureDetector(
+      // На телефоне варианты стоят друг под другом: в строке от подписи
+      // «Только «Андалус, Центральный»» остаётся пара букв
+      return _wrap(
+        wide,
+        GestureDetector(
           onTap: _saving ? null : () => setState(() => _toAll = all),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
@@ -571,14 +585,17 @@ class _AdminStyleScreenState extends State<AdminStyleScreen> {
       );
     }
 
-    return Row(
-      children: [
-        option(false, 'Только «$_branchName»'),
-        const SizedBox(width: 10),
-        option(true, 'Все филиалы (${_branches.length})'),
-      ],
-    );
+    final options = [
+      option(false, 'Только «$_branchName»'),
+      const SizedBox(width: 10, height: 10),
+      option(true, 'Все филиалы (${_branches.length})'),
+    ];
+    return wide ? Row(children: options) : Column(children: options);
   }
+
+  /// В строке вариант тянется на равную долю, в столбце — на всю ширину.
+  static Widget _wrap(bool wide, Widget child) =>
+      wide ? Expanded(child: child) : SizedBox(width: double.infinity, child: child);
 }
 
 /// Мини-меню с выбранным оформлением: шапка кафе, категория и блюдо.
@@ -591,7 +608,21 @@ class _Preview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = ThemeConfig.forStyle(style);
-    final cardW = 120 * c.gridScale;
+    return LayoutBuilder(builder: (context, box) {
+      // Две карточки рядом, как в меню у гостя. Крупные карточки
+      // (gridScale 1.25) — это 150+14+150, и на телефоне они не влезают
+      // ни при какой настройке, поэтому ширину берём от экрана
+      // 40 — отступы внутри превью, 14 — зазор между карточками,
+      // 2 — рамка контейнера
+      final cardW = math.min(
+        120 * c.gridScale,
+        (box.maxWidth - 40 - 14 - 2) / 2,
+      );
+      return _build(c, cardW);
+    });
+  }
+
+  Widget _build(ThemeConfig c, double cardW) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(18),
       child: Container(

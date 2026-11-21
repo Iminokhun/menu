@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../api/api_client.dart';
 import '../../config/current_branch.dart';
+import '../../responsive.dart';
 import '../../image_upload.dart';
 import '../../models/json_read.dart';
 import 'category_tree.dart';
@@ -115,8 +116,9 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                     : 'Новая категория',
             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
           ),
+          insetPadding: Responsive.dialogPadding(MediaQuery.sizeOf(ctx)),
           content: SizedBox(
-            width: 420,
+            width: Responsive.dialogWidth(MediaQuery.sizeOf(ctx), 420, chrome: 48),
             child: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -300,6 +302,9 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
   @override
   Widget build(BuildContext context) {
     final tree = categoryTree(_categories);
+    // Порог от экрана, а не от своих ограничений: в широкой вёрстке 120 px
+    // забирает боковая колонка оболочки
+    final wide = Responsive.isWide(MediaQuery.sizeOf(context));
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(
@@ -338,7 +343,9 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                   ),
                 )
               : ListView.separated(
-                  padding: const EdgeInsets.all(20),
+                  // Снизу место под кнопку «Добавить»: иначе она закрывает
+                  // последнюю категорию, а прокрутка уже кончилась
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 96),
                   itemCount: tree.length,
                   separatorBuilder: (_, __) => const Divider(color: Colors.white12, height: 1),
                   itemBuilder: (_, i) {
@@ -362,27 +369,65 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                         '${_translated(cat)}порядок: ${cat['sort_order'] ?? 0}',
                         style: const TextStyle(color: Colors.white38, fontSize: 12),
                       ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (!isSub)
-                            IconButton(
-                              icon: const Icon(Icons.add, color: Colors.white54),
-                              onPressed: () => _showDialog(parentId: cat['id'] as String),
-                              tooltip: 'Добавить подкатегорию',
+                      // На телефоне три кнопки подряд не оставляют места
+                      // названию: правка — тапом по строке, остальное в меню
+                      onTap: wide ? null : () => _showDialog(item: cat),
+                      trailing: wide
+                          ? Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (!isSub)
+                                  IconButton(
+                                    icon: const Icon(Icons.add,
+                                        color: Colors.white54),
+                                    onPressed: () => _showDialog(
+                                        parentId: cat['id'] as String),
+                                    tooltip: 'Добавить подкатегорию',
+                                  ),
+                                IconButton(
+                                  icon: const Icon(Icons.edit_outlined,
+                                      color: _accent),
+                                  onPressed: () => _showDialog(item: cat),
+                                  tooltip: 'Редактировать',
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline,
+                                      color: Colors.redAccent),
+                                  onPressed: () => _delete(cat),
+                                  tooltip: 'Удалить',
+                                ),
+                              ],
+                            )
+                          : PopupMenuButton<String>(
+                              icon: const Icon(Icons.more_vert,
+                                  color: Colors.white38),
+                              color: const Color(0xFF2A2A2A),
+                              onSelected: (v) => switch (v) {
+                                'edit' => _showDialog(item: cat),
+                                'sub' => _showDialog(
+                                    parentId: cat['id'] as String),
+                                _ => _delete(cat),
+                              },
+                              itemBuilder: (_) => [
+                                const PopupMenuItem(
+                                  value: 'edit',
+                                  child: Text('Изменить',
+                                      style: TextStyle(color: Colors.white)),
+                                ),
+                                if (!isSub)
+                                  const PopupMenuItem(
+                                    value: 'sub',
+                                    child: Text('Добавить подкатегорию',
+                                        style: TextStyle(color: Colors.white)),
+                                  ),
+                                const PopupMenuItem(
+                                  value: 'delete',
+                                  child: Text('Удалить',
+                                      style:
+                                          TextStyle(color: Colors.redAccent)),
+                                ),
+                              ],
                             ),
-                          IconButton(
-                            icon: const Icon(Icons.edit_outlined, color: _accent),
-                            onPressed: () => _showDialog(item: cat),
-                            tooltip: 'Редактировать',
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                            onPressed: () => _delete(cat),
-                            tooltip: 'Удалить',
-                          ),
-                        ],
-                      ),
                     );
                   },
                 ),

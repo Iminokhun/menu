@@ -202,34 +202,53 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
   Widget _toolbar() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
+      // Wrap, а не Row со Spacer: на мониторе выглядит так же, а на
+      // телефоне счётчик с кнопкой уезжают строкой ниже вместо
+      // переполнения
       Padding(
         padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
-        child: Row(
-          children: [
-            Text(
-              'ЗАКАЗЫ',
-              style: GoogleFonts.manrope(
-                color: Colors.white,
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1.5,
-              ),
-            ),
-            const Spacer(),
-            if (_orders.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: Text(
-                  'Показано: ${_orders.length}',
-                  style: const TextStyle(color: Colors.white54, fontSize: 13),
+        // Ширина во всю строку: без неё Wrap ужался бы по содержимому, и
+        // прижимать счётчик к правому краю было бы нечем
+        child: SizedBox(
+          width: double.infinity,
+          child: Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 12,
+            runSpacing: 4,
+            children: [
+              Text(
+                'ЗАКАЗЫ',
+                style: GoogleFonts.manrope(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.5,
                 ),
               ),
-            IconButton(
-              tooltip: 'Обновить',
-              onPressed: () => _apply(() {}),
-              icon: const Icon(Icons.refresh, color: Colors.white54),
-            ),
-          ],
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_orders.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Text(
+                        'Показано: ${_orders.length}',
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  IconButton(
+                    tooltip: 'Обновить',
+                    onPressed: () => _apply(() {}),
+                    icon: const Icon(Icons.refresh, color: Colors.white54),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
       // Один Wrap на все кнопки: на узком окне он переносит ряд, а Row
@@ -368,26 +387,41 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                _badge(
-                  isDelivery ? 'ДОСТАВКА' : 'САМОВЫВОЗ',
-                  isDelivery ? Colors.lightBlueAccent : Colors.greenAccent,
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  '№${order['code']}',
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontWeight: FontWeight.bold,
+            // Wrap, а не Row: на телефоне время уходит строкой ниже, а
+            // не выдавливает номер заказа за край карточки
+            SizedBox(
+              width: double.infinity,
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 10,
+                runSpacing: 4,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _badge(
+                        isDelivery ? 'ДОСТАВКА' : 'САМОВЫВОЗ',
+                        isDelivery
+                            ? Colors.lightBlueAccent
+                            : Colors.greenAccent,
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        '№${order['code']}',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                const Spacer(),
-                Text(
-                  _time(order['created_at'] as String?),
-                  style: const TextStyle(color: Colors.white38, fontSize: 13),
-                ),
-              ],
+                  Text(
+                    _time(order['created_at'] as String?),
+                    style: const TextStyle(color: Colors.white38, fontSize: 13),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 12),
             Text(
@@ -404,7 +438,8 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
             ),
             const SizedBox(height: 4),
             _contact(phone, waPhone),
-            if (isDelivery && ((order['address'] as String?) ?? '').isNotEmpty) ...[
+            if (isDelivery &&
+                ((order['address'] as String?) ?? '').isNotEmpty) ...[
               const SizedBox(height: 6),
               Text(
                 order['address'] as String,
@@ -418,8 +453,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
             const Divider(color: Colors.white12, height: 24),
             for (final raw in items) _line(raw),
             const SizedBox(height: 8),
-            if (deliveryTotal > 0)
-              _sum('Доставка', deliveryTotal, bold: false),
+            if (deliveryTotal > 0) _sum('Доставка', deliveryTotal, bold: false),
             _sum('Итого', jsonDouble(order['total']), bold: true),
             if ((order['comment'] as String?)?.isNotEmpty ?? false) ...[
               const SizedBox(height: 8),
@@ -467,12 +501,18 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
   /// ссылка открыла бы переписку с несуществующим номером.
   Widget _contact(String phone, String waPhone) {
     if (phone.isEmpty) return const SizedBox.shrink();
-    return Row(
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 10,
       children: [
-        const Icon(Icons.phone_outlined, size: 16, color: Colors.white38),
-        const SizedBox(width: 6),
-        Text(phone, style: const TextStyle(color: Colors.white70)),
-        const SizedBox(width: 10),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.phone_outlined, size: 16, color: Colors.white38),
+            const SizedBox(width: 6),
+            Text(phone, style: const TextStyle(color: Colors.white70)),
+          ],
+        ),
         if (kIsWeb && waPhone.isNotEmpty)
           TextButton(
             onPressed: () => openLink(waLink(waPhone, '')),

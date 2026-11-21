@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../api/api_client.dart';
 import '../../config/current_branch.dart';
+import '../../responsive.dart';
 import '../../image_upload.dart';
 import 'category_tree.dart';
 import 'translations.dart';
@@ -168,8 +169,9 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
             item == null ? 'Новый товар' : 'Редактировать товар',
             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
           ),
+          insetPadding: Responsive.dialogPadding(MediaQuery.sizeOf(ctx)),
           content: SizedBox(
-            width: 520,
+            width: Responsive.dialogWidth(MediaQuery.sizeOf(ctx), 520, chrome: 48),
             child: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -303,14 +305,19 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                             size: 20,
                           ),
                           const SizedBox(width: 10),
-                          Text(
-                            isVisible ? 'Товар виден в меню' : 'Товар скрыт из меню',
-                            style: TextStyle(
-                              color: isVisible ? Colors.white : Colors.white38,
-                              fontSize: 14,
+                          // Expanded, а не Spacer: на телефоне подпись и
+                          // переключатель в строку не помещаются
+                          Expanded(
+                            child: Text(
+                              isVisible
+                                  ? 'Товар виден в меню'
+                                  : 'Товар скрыт из меню',
+                              style: TextStyle(
+                                color: isVisible ? Colors.white : Colors.white38,
+                                fontSize: 14,
+                              ),
                             ),
                           ),
-                          const Spacer(),
                           Switch(
                             value: isVisible,
                             onChanged: (v) => setS(() => isVisible = v),
@@ -592,8 +599,9 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
           backgroundColor: _surface,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: Text('Копировать блюда (${ids.length})', style: const TextStyle(color: Colors.white)),
+          insetPadding: Responsive.dialogPadding(MediaQuery.sizeOf(ctx)),
           content: SizedBox(
-            width: 420,
+            width: Responsive.dialogWidth(MediaQuery.sizeOf(ctx), 420, chrome: 48),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -659,9 +667,15 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
 
   /// Шапка в режиме выбора: сколько отмечено, «выбрать все» (по фильтру —
   /// так копируется вся категория), «копировать в…».
-  PreferredSizeWidget _selectionBar() {
+  PreferredSizeWidget _selectionBar(bool wide) {
     final visible = {for (final p in _filtered) p['id'] as String};
     final allChosen = visible.isNotEmpty && _selected!.containsAll(visible);
+    final toggleAll = visible.isEmpty
+        ? null
+        : () => setState(() => allChosen
+            ? _selected!.removeAll(visible)
+            : _selected!.addAll(visible));
+    final copy = _selected!.isEmpty || _copying ? null : _copy;
     return AppBar(
       backgroundColor: _surface,
       automaticallyImplyLeading: false,
@@ -673,31 +687,48 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
       title: Text('Выбрано: ${_selected!.length}',
           style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.w700)),
       actions: [
-        _categoryFilter(),
+        // На телефоне в шапке помещаются две кнопки: фильтр категорий
+        // стоит под шапкой, а у «Копировать в…» остаётся иконка
+        if (wide) _categoryFilter(),
         TextButton(
-          onPressed: visible.isEmpty
-              ? null
-              : () => setState(() => allChosen
-                  ? _selected!.removeAll(visible)
-                  : _selected!.addAll(visible)),
-          child: Text(allChosen ? 'Снять все' : 'Выбрать все', style: const TextStyle(color: Colors.white70)),
+          onPressed: toggleAll,
+          child: Text(
+            wide ? (allChosen ? 'Снять все' : 'Выбрать все') : (allChosen ? 'Снять' : 'Все'),
+            style: const TextStyle(color: Colors.white70),
+          ),
         ),
         const SizedBox(width: 8),
         Padding(
           padding: const EdgeInsets.only(right: 12),
-          child: ElevatedButton.icon(
-            onPressed: _selected!.isEmpty || _copying ? null : _copy,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _accent,
-              foregroundColor: Colors.black,
-              disabledBackgroundColor: Colors.white10,
-              disabledForegroundColor: Colors.white30,
-            ),
-            icon: _copying
-                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
-                : const Icon(Icons.copy_all_outlined, size: 18),
-            label: const Text('Копировать в…'),
-          ),
+          child: wide
+              ? ElevatedButton.icon(
+                  onPressed: copy,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _accent,
+                    foregroundColor: Colors.black,
+                    disabledBackgroundColor: Colors.white10,
+                    disabledForegroundColor: Colors.white30,
+                  ),
+                  icon: _copying
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.black))
+                      : const Icon(Icons.copy_all_outlined, size: 18),
+                  label: const Text('Копировать в…'),
+                )
+              : IconButton(
+                  onPressed: copy,
+                  tooltip: 'Копировать в другой филиал',
+                  icon: _copying
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: _accent))
+                      : const Icon(Icons.copy_all_outlined, color: _accent),
+                ),
         ),
       ],
     );
@@ -729,22 +760,56 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
   @override
   Widget build(BuildContext context) {
     final selecting = _selected != null;
+    // Порог берём от экрана, а не от своих ограничений: в широкой вёрстке
+    // 120 px забирает боковая колонка оболочки, и экран решил бы «узко»
+    // там, где оболочка решила «широко»
+    final wide = Responsive.isWide(MediaQuery.sizeOf(context));
+    final canCopy = _otherBranches.isNotEmpty && _products.isNotEmpty;
     return Scaffold(
       backgroundColor: _bg,
-      appBar: selecting ? _selectionBar() : AppBar(
+      appBar: selecting ? _selectionBar(wide) : AppBar(
         backgroundColor: _surface,
         automaticallyImplyLeading: false,
         title: Text('Товары', style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.w700)),
-        actions: [
-          _categoryFilter(),
-          if (_otherBranches.isNotEmpty && _products.isNotEmpty)
-            TextButton.icon(
-              onPressed: () => setState(() => _selected = {}),
-              icon: const Icon(Icons.copy_all_outlined, color: _accent, size: 18),
-              label: const Text('Копировать в другой филиал', style: TextStyle(color: _accent)),
-            ),
-          IconButton(icon: const Icon(Icons.refresh, color: Colors.white54), onPressed: _loadAll),
-        ],
+        actions: wide
+            ? [
+                _categoryFilter(),
+                if (canCopy)
+                  TextButton.icon(
+                    onPressed: () => setState(() => _selected = {}),
+                    icon: const Icon(Icons.copy_all_outlined,
+                        color: _accent, size: 18),
+                    label: const Text('Копировать в другой филиал',
+                        style: TextStyle(color: _accent)),
+                  ),
+                IconButton(
+                    icon: const Icon(Icons.refresh, color: Colors.white54),
+                    onPressed: _loadAll),
+              ]
+            // На телефоне подписи в шапку не помещаются: фильтр категорий
+            // уезжает под неё, остальное — в меню
+            : [
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert, color: Colors.white54),
+                  color: const Color(0xFF2A2A2A),
+                  onSelected: (v) => v == 'refresh'
+                      ? _loadAll()
+                      : setState(() => _selected = {}),
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(
+                      value: 'refresh',
+                      child: Text('Обновить',
+                          style: TextStyle(color: Colors.white)),
+                    ),
+                    if (canCopy)
+                      const PopupMenuItem(
+                        value: 'copy',
+                        child: Text('Копировать в другой филиал',
+                            style: TextStyle(color: Colors.white)),
+                      ),
+                  ],
+                ),
+              ],
       ),
       floatingActionButton: selecting ? null : FloatingActionButton.extended(
         heroTag: 'fab_products',
@@ -754,7 +819,25 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
         label: const Text('Добавить', style: TextStyle(fontWeight: FontWeight.bold)),
         onPressed: _categories.isEmpty ? null : () => _showDialog(),
       ),
-      body: _loading
+      body: Column(
+        children: [
+          if (!wide && _categories.isNotEmpty)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 20, top: 4),
+                child: _categoryFilter(),
+              ),
+            ),
+          Expanded(child: _list(wide)),
+        ],
+      ),
+    );
+  }
+
+  Widget _list(bool wide) {
+    final selecting = _selected != null;
+    return _loading
           ? const Center(child: CircularProgressIndicator(color: _accent))
           : _filtered.isEmpty
               ? Center(
@@ -768,7 +851,9 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                   ),
                 )
               : ListView.separated(
-                  padding: const EdgeInsets.all(20),
+                  // Снизу место под кнопку «Добавить»: иначе она закрывает
+                  // последнее блюдо, а прокрутка уже кончилась
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 96),
                   itemCount: _filtered.length,
                   separatorBuilder: (_, __) => const Divider(color: Colors.white12, height: 1),
                   itemBuilder: (_, i) {
@@ -778,8 +863,13 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                     final portionsCount = (p['portions'] as List?)?.length ?? 0;
                     final id = p['id'] as String;
                     return ListTile(
-                      // В режиме выбора строка целиком отмечает блюдо
-                      onTap: selecting ? () => _toggle(id) : null,
+                      // В режиме выбора строка целиком отмечает блюдо, а на
+                      // телефоне тап по строке — самый быстрый путь к правке
+                      onTap: selecting
+                          ? () => _toggle(id)
+                          : wide
+                              ? null
+                              : () => _showDialog(item: p),
                       contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
                       leading: Stack(
                         children: [
@@ -829,17 +919,47 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                               checkColor: Colors.black,
                               side: const BorderSide(color: Colors.white38),
                             )
-                          : Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(icon: const Icon(Icons.edit_outlined, color: _accent), onPressed: () => _showDialog(item: p)),
-                                IconButton(icon: const Icon(Icons.delete_outline, color: Colors.redAccent), onPressed: () => _delete(p)),
-                              ],
-                            ),
+                          // На телефоне два ряда кнопок не оставляют места
+                          // названию блюда: правка — тапом по строке,
+                          // остальное — в меню
+                          : wide
+                              ? Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                        icon: const Icon(Icons.edit_outlined,
+                                            color: _accent),
+                                        onPressed: () => _showDialog(item: p)),
+                                    IconButton(
+                                        icon: const Icon(Icons.delete_outline,
+                                            color: Colors.redAccent),
+                                        onPressed: () => _delete(p)),
+                                  ],
+                                )
+                              : PopupMenuButton<String>(
+                                  icon: const Icon(Icons.more_vert,
+                                      color: Colors.white38),
+                                  color: const Color(0xFF2A2A2A),
+                                  onSelected: (v) => v == 'edit'
+                                      ? _showDialog(item: p)
+                                      : _delete(p),
+                                  itemBuilder: (_) => const [
+                                    PopupMenuItem(
+                                      value: 'edit',
+                                      child: Text('Изменить',
+                                          style: TextStyle(color: Colors.white)),
+                                    ),
+                                    PopupMenuItem(
+                                      value: 'delete',
+                                      child: Text('Удалить',
+                                          style: TextStyle(
+                                              color: Colors.redAccent)),
+                                    ),
+                                  ],
+                                ),
                     );
                   },
-                ),
-    );
+                );
   }
 
   Widget _placeholder() => Container(

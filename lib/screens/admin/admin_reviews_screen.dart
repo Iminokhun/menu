@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../api/api_client.dart';
 import '../../config/current_branch.dart';
+import '../../responsive.dart';
 import 'admin_filters.dart';
 import '../../widgets/star_rating.dart';
 
@@ -202,51 +203,72 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Порог от экрана, а не от своих ограничений: в широкой вёрстке часть
+    // ширины забирает боковая колонка оболочки
+    final wide = Responsive.isWide(MediaQuery.sizeOf(context));
     return Container(
       color: _bg,
       child: Column(
         children: [
-          _toolbar(),
+          _toolbar(wide),
           Expanded(child: _body()),
         ],
       ),
     );
   }
 
-  Widget _toolbar() => Column(
+  Widget _toolbar(bool wide) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
+      // Wrap, а не Row со Spacer: «Средняя по показанным: 4,5 (12)» вдвое
+      // длиннее заголовка и на телефоне уходит строкой ниже
       Padding(
         padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
-        child: Row(
-          children: [
-            Text(
-              'ОТЗЫВЫ',
-              style: GoogleFonts.manrope(
-                color: Colors.white,
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1.5,
-              ),
-            ),
-            const Spacer(),
-            if (_reviews.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: Text(
-                  _countLine,
-                  style: const TextStyle(color: Colors.white54, fontSize: 13),
+        // Ширина во всю строку: без неё Wrap ужался бы по содержимому, и
+        // прижимать счётчик к правому краю было бы нечем
+        child: SizedBox(
+          width: double.infinity,
+          child: Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 12,
+            runSpacing: 4,
+            children: [
+              Text(
+                'ОТЗЫВЫ',
+                style: GoogleFonts.manrope(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.5,
                 ),
               ),
-            IconButton(
-              tooltip: 'Обновить',
-              onPressed: () {
-                _loadWaiters();
-                _apply(() {});
-              },
-              icon: const Icon(Icons.refresh, color: Colors.white54),
-            ),
-          ],
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_reviews.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Text(
+                        wide ? _countLine : _countShort,
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  IconButton(
+                    tooltip: 'Обновить',
+                    onPressed: () {
+                      _loadWaiters();
+                      _apply(() {});
+                    },
+                    icon: const Icon(Icons.refresh, color: Colors.white54),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
       // Один Wrap на все кнопки: на узком окне он переносит ряд, а Row
@@ -260,12 +282,16 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             for (final p in AdminPeriod.values)
-              _chip(p.label, _period == p, () => _apply(() {
-                _period = p;
-                // Период меняет и набор имён: уволившийся месяц назад не
-                // должен мешаться в выборе
-                _loadWaiters();
-              })),
+              _chip(
+                p.label,
+                _period == p,
+                () => _apply(() {
+                  _period = p;
+                  // Период меняет и набор имён: уволившийся месяц назад не
+                  // должен мешаться в выборе
+                  _loadWaiters();
+                }),
+              ),
             _divider(),
             for (final b in _Bucket.values)
               _chip(b.label, _bucket == b, () => _apply(() => _bucket = b)),
@@ -336,6 +362,12 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
   String get _countLine => _bucket == _Bucket.any
       ? 'Средняя по показанным: $_average (${_reviews.length})'
       : 'Показано: ${_reviews.length}';
+
+  /// То же для телефона: там на подпись остаётся полстроки, а цифры важнее
+  /// слов — «4,5 · 12» читается так же, как «Средняя по показанным».
+  String get _countShort => _bucket == _Bucket.any
+      ? '$_average · ${_reviews.length}'
+      : '${_reviews.length}';
 
   /// Чем сейчас сужен список — строкой, чтобы объяснить пустой экран
   String get _filterLine => [

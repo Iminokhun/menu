@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -113,10 +112,10 @@ class _ReviewDialogState extends State<ReviewDialog> {
     final config = appTheme.value;
     final l = AppLocalizations.of(context);
     final screen = MediaQuery.sizeOf(context);
-    final inset = Responsive.isWide(screen) ? 20.0 : 15.0;
+    final inset = Responsive.dialogInset(screen);
     // Ширина желаемая, но не больше экрана; на широком мониторе форма из
     // четырёх полей во всю ширину смотрелась бы нелепо
-    final width = math.min(460.0, screen.width - inset * 2);
+    final width = Responsive.dialogWidth(screen, 460);
     return Dialog(
       backgroundColor: Colors.transparent,
       // Dialog сам поднимает содержимое над клавиатурой
