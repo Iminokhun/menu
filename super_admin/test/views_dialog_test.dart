@@ -38,10 +38,14 @@ void main() {
   Completer<void>? hold;
   var fails = false;
 
+  /// Ответ вместо обычного, если тесту нужны свои числа
+  Map<String, Object?>? answer;
+
   setUp(() {
     requests = [];
     hold = null;
     fails = false;
+    answer = null;
     api.httpClient = MockClient((req) async {
       requests.add(req.url);
       if (hold != null) await hold!.future;
@@ -51,7 +55,10 @@ void main() {
           500,
         );
       }
-      return http.Response.bytes(utf8.encode(jsonEncode(_answer())), 200);
+      return http.Response.bytes(
+        utf8.encode(jsonEncode(answer ?? _answer())),
+        200,
+      );
     });
   });
 
@@ -92,6 +99,35 @@ void main() {
     expect(find.byTooltip('22.11 · 0'), findsOneWidget);
     expect(find.byTooltip('21.11 · 4'), findsOneWidget);
     expect(find.byTooltip('23.11 · 12'), findsOneWidget);
+
+    // Края ряда подписаны: иначе непонятно, где тут сегодня
+    expect(find.text('25.10'), findsOneWidget);
+    expect(find.text('23.11'), findsOneWidget);
+  });
+
+  testWidgets('тысячи разбиты пробелом, а не слиты в кашу', (tester) async {
+    answer = {
+      'today': '2026-11-23',
+      'days': [
+        {'day': '2026-11-23', 'people': 1234, 'opens': 5000},
+      ],
+      'branches': [
+        {
+          'id': 'b1',
+          'name': 'Центр',
+          'views_today': 1234,
+          'views_total': 9412,
+        },
+      ],
+    };
+    await open(tester);
+    // Пробел неразрывный: обычный разорвал бы число переносом строки
+    expect(find.text('9 412'), findsOneWidget);
+    expect(find.text('1 234'), findsNWidgets(2)); // сегодня и за период
+    expect(
+      find.text('сегодня 1 234 · всего 9 412'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('другой период — другой запрос и другой ряд', (tester) async {

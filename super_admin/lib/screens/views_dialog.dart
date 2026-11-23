@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api_client.dart';
+import '../big_number.dart';
 
 /// Просмотры меню одного кафе: сколько людей заходило по дням и сколько у
 /// каждого филиала. Только смотрим — ничего не меняем, поэтому ничего и не
@@ -111,7 +112,7 @@ class _ViewsDialogState extends State<_ViewsDialog> {
         style: const TextStyle(color: Colors.white),
       ),
       content: SizedBox(
-        width: 460,
+        width: 520,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -147,14 +148,20 @@ class _ViewsDialogState extends State<_ViewsDialog> {
                   child: LinearProgressIndicator(color: _accent),
                 )
               else ...[
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+                Wrap(
+                  spacing: 28,
+                  runSpacing: 12,
+                  crossAxisAlignment: WrapCrossAlignment.end,
                   children: [
-                    _big('$_todayPeople', 'сегодня'),
-                    const SizedBox(width: 24),
-                    _big('$period', 'за ${_periods[_days]}'),
-                    const SizedBox(width: 24),
-                    _big('$_allTime', 'всего'),
+                    // Золотом — только «сегодня»: за ним и приходят
+                    BigStat(_todayPeople, 'сегодня', size: 40),
+                    BigStat(
+                      period,
+                      'за ${_periods[_days]}',
+                      size: 40,
+                      color: Colors.white,
+                    ),
+                    BigStat(_allTime, 'всего', size: 40, color: Colors.white),
                   ],
                 ),
                 const SizedBox(height: 6),
@@ -190,21 +197,6 @@ class _ViewsDialogState extends State<_ViewsDialog> {
     );
   }
 
-  Widget _big(String n, String what) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(
-        n,
-        style: const TextStyle(
-          color: _accent,
-          fontSize: 26,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-      Text(what, style: const TextStyle(color: Colors.white54, fontSize: 12)),
-    ],
-  );
-
   static Widget _label(String text) => Text(
     text,
     style: const TextStyle(
@@ -219,40 +211,55 @@ class _ViewsDialogState extends State<_ViewsDialog> {
   /// тридцать прямоугольников её и не стоят.
   Widget _chart(List<({String day, int people})> row) {
     final top = row.fold(0, (m, d) => d.people > m ? d.people : m);
-    return SizedBox(
-      height: 96,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          for (final d in row)
-            Expanded(
-              child: Tooltip(
-                message: '${_ruDay(d.day)} · ${d.people}',
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 1),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      // Пустой день — тонкая серая полоска у самого низа:
-                      // так видно, что день был, а гостей не было
-                      Container(
-                        height: top == 0
-                            ? 2.0
-                            : 2 + 86 * (d.people / top).clamp(0.0, 1.0),
-                        decoration: BoxDecoration(
-                          color: d.people == 0 ? Colors.white12 : _accent,
-                          borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(2),
+    const dayStyle = TextStyle(color: Colors.white38, fontSize: 11);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          height: 150,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              for (final d in row)
+                Expanded(
+                  child: Tooltip(
+                    message: '${_ruDay(d.day)} · ${d.people}',
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 1),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          // Пустой день — тонкая серая полоска у самого низа:
+                          // так видно, что день был, а гостей не было
+                          Container(
+                            height: top == 0
+                                ? 2.0
+                                : 2 + 140 * (d.people / top).clamp(0.0, 1.0),
+                            decoration: BoxDecoration(
+                              color: d.people == 0 ? Colors.white12 : _accent,
+                              borderRadius: const BorderRadius.vertical(
+                                top: Radius.circular(2),
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
-              ),
-            ),
-        ],
-      ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 6),
+        // Край ряда подписан: без этого непонятно, какой столбик сегодняшний
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(_ruDay(row.first.day), style: dayStyle),
+            Text(_ruDay(row.last.day), style: dayStyle),
+          ],
+        ),
+      ],
     );
   }
 
@@ -270,8 +277,9 @@ class _ViewsDialogState extends State<_ViewsDialog> {
           ),
         ),
         Text(
-          'сегодня ${b['views_today']} · всего ${b['views_total']}',
-          style: const TextStyle(color: Colors.white38, fontSize: 12),
+          'сегодня ${bigNumber((b['views_today'] as num).toInt())} · '
+          'всего ${bigNumber((b['views_total'] as num).toInt())}',
+          style: const TextStyle(color: Colors.white60, fontSize: 13),
         ),
       ],
     ),

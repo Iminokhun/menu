@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../api_client.dart';
+import '../big_number.dart';
 import 'catalog_dialog.dart';
 import 'payment_dialog.dart';
 import 'views_dialog.dart';
@@ -484,10 +485,32 @@ class _SuperAdminShellState extends State<SuperAdminShell> {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  Text(
-                      'Заведений: ${_cafes.length}'
-                      '${_viewsToday == 0 ? '' : ' · людей в меню сегодня: $_viewsToday'}',
-                      style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                  // Главная цифра платформы — сколько людей сегодня
+                  // вообще открывало меню. Ради неё сюда и заходят
+                  Container(
+                    width: double.infinity,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: _surface,
+                      borderRadius: BorderRadius.circular(16),
+                      border:
+                          Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                    ),
+                    child: Wrap(
+                      spacing: 36,
+                      runSpacing: 12,
+                      crossAxisAlignment: WrapCrossAlignment.end,
+                      children: [
+                        BigStat(_viewsToday, 'людей в меню сегодня',
+                            size: 38, color: _viewColor(_viewsToday)),
+                        BigStat(_viewsTotal, 'посещений всего',
+                            size: 38, color: Colors.white),
+                        BigStat(_cafes.length, 'заведений',
+                            size: 38, color: Colors.white),
+                      ],
+                    ),
+                  ),
                   const SizedBox(height: 16),
                   if (_cafes.isEmpty)
                     const Padding(
@@ -610,30 +633,60 @@ class _SuperAdminShellState extends State<SuperAdminShell> {
             );
           }),
 
-          const SizedBox(height: 4),
+          const SizedBox(height: 12),
 
           // Пользуются ли меню вообще. Главный вопрос к кафе перед
           // разговором об оплате, и единственный, на который ни название,
-          // ни срок оплаты не отвечают
-          Row(
-            children: [
-              const Icon(Icons.visibility_outlined, color: _accent, size: 18),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                    'Сегодня: $cafeToday · всего: $cafeTotal',
-                    style: const TextStyle(
-                        color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600)),
+          // ни срок оплаты не отвечают, — поэтому цифрами, а не строчкой
+          // наравне с настройками
+          InkWell(
+            onTap: () => showViewsDialog(context, cafe),
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.04),
+                borderRadius: BorderRadius.circular(14),
               ),
-              const SizedBox(width: 8),
-              TextButton(
-                onPressed: () => showViewsDialog(context, cafe),
-                child: const Text('Просмотры', style: TextStyle(color: _accent)),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.visibility_outlined,
+                                color: Colors.white38, size: 14),
+                            const SizedBox(width: 6),
+                            Text('ЛЮДЕЙ В МЕНЮ', style: _capsStyle),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 28,
+                          runSpacing: 10,
+                          crossAxisAlignment: WrapCrossAlignment.end,
+                          children: [
+                            BigStat(cafeToday, 'сегодня',
+                                size: 34, color: _viewColor(cafeToday)),
+                            BigStat(cafeTotal, 'всего',
+                                size: 34, color: Colors.white70),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Text('Просмотры',
+                      style: TextStyle(color: _accent, fontSize: 13)),
+                  const Icon(Icons.chevron_right, color: _accent, size: 18),
+                ],
               ),
-            ],
+            ),
           ),
 
-          const SizedBox(height: 4),
+          const SizedBox(height: 12),
 
           // Лимит — главное, ради чего этот экран: видно сразу и меняется в один клик
           InkWell(
@@ -699,6 +752,19 @@ class _SuperAdminShellState extends State<SuperAdminShell> {
   int get _viewsToday =>
       _cafes.fold(0, (n, c) => n + _int(c['views_today']));
 
+  /// Посещений за всё время по всей платформе
+  int get _viewsTotal =>
+      _cafes.fold(0, (n, c) => n + _int(c['views_total']));
+
+  /// Ноль золотом выглядит достижением, хотя это пустой день
+  static Color _viewColor(int n) => n == 0 ? Colors.white24 : _accent;
+
+  static const _capsStyle = TextStyle(
+      color: Colors.white38,
+      fontSize: 11,
+      letterSpacing: 2,
+      fontWeight: FontWeight.w700);
+
   Widget _branchRow(Map<String, dynamic> b) {
     final orders = b['orders_enabled'] == true;
     final ordersPhone = ((b['order_whatsapp'] as String?) ?? '').isNotEmpty;
@@ -718,8 +784,8 @@ class _SuperAdminShellState extends State<SuperAdminShell> {
               ? 'заказы принимает'
               : 'заказы: кафе не вписало номер',
       reviews ? 'отзывы принимает' : 'отзывы не подключены',
-      'людей: сегодня ${_int(b['views_today'])}, всего ${_int(b['views_total'])}',
     ].join(' · ');
+    final today = _int(b['views_today']);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
@@ -748,6 +814,14 @@ class _SuperAdminShellState extends State<SuperAdminShell> {
               ],
             ),
           ),
+          // Цифра у каждого филиала своя: у кафе бывает точка, в которую
+          // не заходит никто, а в сумме по кафе это незаметно
+          Tooltip(
+            message: 'Всего посещений: ${bigNumber(_int(b['views_total']))}',
+            child: BigStat(today, 'сегодня',
+                size: 18, color: _viewColor(today)),
+          ),
+          const SizedBox(width: 10),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_horiz, color: Colors.white54, size: 20),
             color: _surface,
