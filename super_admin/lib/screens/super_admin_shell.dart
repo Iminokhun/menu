@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../api_client.dart';
 import 'catalog_dialog.dart';
 import 'payment_dialog.dart';
+import 'views_dialog.dart';
 
 /// Главная админка платформы: кафе, их логины и лимит филиалов.
 ///
@@ -483,7 +484,9 @@ class _SuperAdminShellState extends State<SuperAdminShell> {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  Text('Заведений: ${_cafes.length}',
+                  Text(
+                      'Заведений: ${_cafes.length}'
+                      '${_viewsToday == 0 ? '' : ' · людей в меню сегодня: $_viewsToday'}',
                       style: const TextStyle(color: Colors.white38, fontSize: 12)),
                   const SizedBox(height: 16),
                   if (_cafes.isEmpty)
@@ -507,6 +510,8 @@ class _SuperAdminShellState extends State<SuperAdminShell> {
     final max = cafe['max_branches'] as int;
     final users = List<Map<String, dynamic>>.from(cafe['users'] as List);
     final branches = List<Map<String, dynamic>>.from(cafe['branches'] as List);
+    final cafeToday = _int(cafe['views_today']);
+    final cafeTotal = _int(cafe['views_total']);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -607,6 +612,29 @@ class _SuperAdminShellState extends State<SuperAdminShell> {
 
           const SizedBox(height: 4),
 
+          // Пользуются ли меню вообще. Главный вопрос к кафе перед
+          // разговором об оплате, и единственный, на который ни название,
+          // ни срок оплаты не отвечают
+          Row(
+            children: [
+              const Icon(Icons.visibility_outlined, color: _accent, size: 18),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                    'Сегодня: $cafeToday · всего: $cafeTotal',
+                    style: const TextStyle(
+                        color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600)),
+              ),
+              const SizedBox(width: 8),
+              TextButton(
+                onPressed: () => showViewsDialog(context, cafe),
+                child: const Text('Просмотры', style: TextStyle(color: _accent)),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 4),
+
           // Лимит — главное, ради чего этот экран: видно сразу и меняется в один клик
           InkWell(
             onTap: () => _editCafe(cafe),
@@ -663,6 +691,14 @@ class _SuperAdminShellState extends State<SuperAdminShell> {
   ///
   /// Оба права — за одной кнопкой меню, а не двумя кнопками в строке:
   /// прав со временем станет больше, а ширина строки — нет.
+  /// Число из ответа сервера. Старый сервер этих полей не присылает, и
+  /// админка не должна из-за них падать — отсюда не `as int`.
+  static int _int(Object? v) => v is num ? v.toInt() : 0;
+
+  /// Сколько людей по всей платформе зашло в меню сегодня
+  int get _viewsToday =>
+      _cafes.fold(0, (n, c) => n + _int(c['views_today']));
+
   Widget _branchRow(Map<String, dynamic> b) {
     final orders = b['orders_enabled'] == true;
     final ordersPhone = ((b['order_whatsapp'] as String?) ?? '').isNotEmpty;
@@ -682,6 +718,7 @@ class _SuperAdminShellState extends State<SuperAdminShell> {
               ? 'заказы принимает'
               : 'заказы: кафе не вписало номер',
       reviews ? 'отзывы принимает' : 'отзывы не подключены',
+      'людей: сегодня ${_int(b['views_today'])}, всего ${_int(b['views_total'])}',
     ].join(' · ');
 
     return Padding(

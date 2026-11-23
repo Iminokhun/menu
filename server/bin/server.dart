@@ -40,10 +40,14 @@ import 'package:shelf_static/shelf_static.dart';
 ///               увёл бы все заказы кафе на чужой телефон
 ///   SUPER_WEB_DIR  папка собранной главной админки (super_admin/build/web),
 ///               она открывается по адресу /menu-kg/
+///   TZ_OFFSET_H  на сколько часов местное время впереди UTC (6 — Бишкек).
+///               По нему счётчик просмотров решает, где кончается день:
+///               иначе день кафе начинался бы в 6 утра
 Future<void> main(List<String> args) async {
   final env = Platform.environment;
   final dataDir = env['DATA_DIR'] ?? 'data';
   final port = int.tryParse(env['PORT'] ?? '') ?? 8090;
+  final tzOffsetHours = _tzOffset(env['TZ_OFFSET_H']);
 
   // Копии делаются до открытия базы на запись: им не нужна схема и
   // обновление колонок, только чтение
@@ -99,6 +103,7 @@ Future<void> main(List<String> args) async {
         .trim()
         .replaceAll(RegExp(r'\D'), ''),
     uploadQuotaBytes: _quota(env['UPLOAD_QUOTA_MB']) * 1024 * 1024,
+    tzOffsetHours: tzOffsetHours,
   );
 
   // Закрытая часть API доступна из браузера только со своих сайтов
@@ -149,12 +154,21 @@ Future<void> main(List<String> args) async {
         return api.router.call(req);
       });
 
-  // Отзывы живут 40 дней. Чистим при запуске — база могла простоять
-  // выключенной неделю — и раз в сутки, потому что сервер работает
-  // месяцами и одного раза при старте не случилось бы ни разу
-  final purged = purgeOldReviews(db);
-  if (purged > 0) stdout.writeln('Удалено отзывов старше 40 дней: $purged');
-  Timer.periodic(const Duration(hours: 24), (_) => purgeOldReviews(db));
+  // Отзывы живут 40 дней, метки устройств у счётчика просмотров — два.
+  // Чистим при запуске — база могла простоять выключенной неделю — и раз
+  // в сутки, потому что сервер работает месяцами и одного раза при старте
+  // не случилось бы ни разу. Один заход на обе таблицы: второй таймер на
+  // то же самое незачем
+  void purge({bool loud = false}) {
+    final purged = purgeOldReviews(db);
+    if (loud && purged > 0) {
+      stdout.writeln('Удалено отзывов старше 40 дней: $purged');
+    }
+    purgeOldViewDevices(db, tzOffsetHours: tzOffsetHours);
+  }
+
+  purge(loud: true);
+  Timer.periodic(const Duration(hours: 24), (_) => purge());
 
   final server = await io.serve(handler, InternetAddress.anyIPv4, port);
   stdout.writeln('Menu API: http://${server.address.address}:${server.port}');
@@ -273,6 +287,20 @@ String _origin(String name, String raw) {
     exit(78);
   }
   return origin;
+}
+
+/// Часовой пояс — строго: опечатка, молча ставшая нулём, сдвинула бы
+/// границу дня на шесть часов, и счётчик просмотров врал бы, не сообщая
+/// об этом никому.
+int _tzOffset(String? raw) {
+  if (raw == null || raw.trim().isEmpty) return 6;
+  final h = int.tryParse(raw.trim());
+  if (h == null || h < -14 || h > 14) {
+    stderr.writeln('Ошибка: TZ_OFFSET_H=$raw — нужно целое число часов '
+        'от -14 до 14 (6 — Бишкек)');
+    exit(78);
+  }
+  return h;
 }
 
 int _quota(String? raw) {

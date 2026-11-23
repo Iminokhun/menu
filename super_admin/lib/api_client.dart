@@ -7,7 +7,18 @@ import 'package:http/http.dart' as http;
 /// не нужно. Для разработки: `--dart-define=API_URL=http://localhost:8090`.
 final serverUrl = const String.fromEnvironment('API_URL').isNotEmpty
     ? const String.fromEnvironment('API_URL')
-    : Uri.base.origin;
+    : _pageOrigin();
+
+/// Адрес страницы, из которой открыта админка. Вне браузера (проверки,
+/// запуск не на вебе) у страницы адрес `file:///…`, и `Uri.base.origin`
+/// на нём бросает исключение — тогда сервер считаем локальным.
+String _pageOrigin() {
+  try {
+    return Uri.base.origin;
+  } catch (_) {
+    return 'http://localhost:8090';
+  }
+}
 
 /// Ошибка от сервера. [message] уже написан для человека — его можно
 /// показывать в SnackBar как есть.
@@ -67,6 +78,9 @@ class ApiClient {
   String? _token;
   Me? me;
 
+  /// Подменяется в проверках заглушкой без сети — как в приложении меню
+  http.Client httpClient = http.Client();
+
   bool get isSignedIn => _token != null;
 
   Uri _uri(String path, [Map<String, String>? query]) =>
@@ -90,20 +104,22 @@ class ApiClient {
   }
 
   Future<dynamic> get(String path, [Map<String, String>? query]) async =>
-      _decode(await http.get(_uri(path, query), headers: _headers));
+      _decode(await httpClient.get(_uri(path, query), headers: _headers));
 
   Future<dynamic> post(String path, [Object? body]) async =>
-      _decode(await http.post(_uri(path), headers: _headers, body: jsonEncode(body ?? {})));
+      _decode(await httpClient.post(_uri(path),
+          headers: _headers, body: jsonEncode(body ?? {})));
 
   Future<dynamic> patch(String path, Object body) async =>
-      _decode(await http.patch(_uri(path), headers: _headers, body: jsonEncode(body)));
+      _decode(await httpClient.patch(_uri(path),
+          headers: _headers, body: jsonEncode(body)));
 
   Future<dynamic> delete(String path) async =>
-      _decode(await http.delete(_uri(path), headers: _headers));
+      _decode(await httpClient.delete(_uri(path), headers: _headers));
 
   /// Загрузка файла: тело запроса — сами байты (см. сервер, `_upload`)
   Future<dynamic> upload(String path, List<int> bytes, Map<String, String> query) async =>
-      _decode(await http.post(_uri(path, query),
+      _decode(await httpClient.post(_uri(path, query),
           headers: {
             'content-type': 'application/octet-stream',
             if (_token != null) 'authorization': 'Bearer $_token',

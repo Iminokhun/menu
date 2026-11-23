@@ -150,6 +150,16 @@ void main() {
           .select("select 1 from sqlite_master where name = 'payments'")
           .isNotEmpty,
     );
+    expect(
+      'таблицы счётчика просмотров созданы',
+      db
+          .select(
+            "select name from sqlite_master where name in "
+            "('branch_views', 'branch_view_devices')",
+          )
+          .length ==
+          2,
+    );
     final branchCols = db
         .select('pragma table_info(branches)')
         .map((r) => r['name'])

@@ -10,6 +10,7 @@ import 'api/api_client.dart';
 import 'models/branch.dart';
 import 'models/product.dart';
 import 'photo_url.dart';
+import 'view_ping.dart';
 
 /// Меню филиала вместе с тем, откуда оно взято.
 class MenuData {
@@ -73,6 +74,9 @@ class MenuStore {
     // Корзина принадлежит филиалу: в другом кафе её блюд нет в меню
     bindCartToBranch(slug);
     _slug = slug;
+    // Счётчик просмотров — именно здесь, а не в refresh(): обновление
+    // бывает и по кнопке, а в зале с планшетом её жмут весь день
+    unawaited(pingView(slug));
     data.value = await _readCache(slug);
     if (data.value != null) {
       unawaited(refresh());

@@ -191,6 +191,40 @@ create table if not exists reviews (
   created_at text    not null default (datetime('now'))
 );
 
+-- Сколько разных людей открывали меню филиала в какой день. Считает
+-- POST /api/public/view; смотрит это только владелец платформы в /menu-kg/.
+--
+-- Итог, а не журнал посещений: одна строка на филиал в день, и в ней
+-- только два числа. Кто именно заходил, здесь не хранится и храниться не
+-- может — ни адреса, ни метки устройства, ни времени с точностью до часа.
+-- Строки не удаляются: это и есть «всего за всё время», а растёт таблица
+-- на 365 строк в год на филиал.
+--
+-- day — местный день (TZ_OFFSET_H), а не UTC: иначе день кафе начинался бы
+-- в 6 утра и вечерние гости попадали бы в завтрашнюю цифру.
+create table if not exists branch_views (
+  branch_id text    not null references branches(id) on delete cascade,
+  day       text    not null,
+  -- Разных устройств за день
+  people    integer not null default 0,
+  -- Сколько раз меню открывали всего. Сейчас не показывается нигде, но
+  -- считается: «часто ли возвращаются» иначе придётся собирать с нуля
+  opens     integer not null default 0,
+  primary key (branch_id, day)
+);
+
+-- Чтобы один человек за день считался один раз. device — случайная строка,
+-- которую приложение само себе придумало и держит в памяти браузера; она
+-- не связана ни с гостем, ни с заказом, ни с отзывом, и очистка браузера
+-- делает её новой. Живёт пару дней (purgeOldViewDevices): для «сегодня»
+-- больше не нужно, а итог уже сложен в branch_views.
+create table if not exists branch_view_devices (
+  branch_id text not null references branches(id) on delete cascade,
+  day       text not null,
+  device    text not null,
+  primary key (branch_id, day, device)
+);
+
 create index if not exists branches_cafe_idx    on branches (cafe_id, sort_order);
 create index if not exists orders_branch_idx     on orders (branch_id, created_at);
 create index if not exists reviews_branch_idx    on reviews (branch_id, created_at);
@@ -411,6 +445,74 @@ int purgeOldReviews(Database db, {int days = reviewMaxAgeDays}) {
     '-$days days',
   ]);
   return db.updatedRows;
+}
+
+/// Засчитать открытие меню филиала.
+///
+/// `people` растёт только с нового устройства за этот день, `opens` — с
+/// каждого открытия. Одной транзакцией: иначе при двух одновременных
+/// гостях метка легла бы, а число не выросло.
+void countView(
+  Database db, {
+  required String branchId,
+  required String device,
+  required String day,
+}) {
+  inTransaction(db, () {
+    // `insert or ignore` + updatedRows вместо «сначала посмотреть, потом
+    // вставить»: проверка и вставка — одно действие, и второго такого же
+    // гостя отсекает сама база, а не наша догадка о том, кто успел раньше
+    db.execute(
+      'insert or ignore into branch_view_devices (branch_id, day, device) '
+      'values (?, ?, ?)',
+      [branchId, day, device],
+    );
+    final fresh = db.updatedRows;
+    db.execute(
+      'insert or ignore into branch_views (branch_id, day) values (?, ?)',
+      [branchId, day],
+    );
+    db.execute(
+      'update branch_views set people = people + ?, opens = opens + 1 '
+      'where branch_id = ? and day = ?',
+      [fresh, branchId, day],
+    );
+  });
+}
+
+/// Сколько дней держатся метки устройств. Нужны они только для «сегодня»,
+/// но день кончается не одновременно во всех часовых поясах, поэтому два,
+/// а не один.
+const viewDeviceMaxAgeDays = 2;
+
+/// Удалить метки устройств старше [days] дней. Возвращает, сколько удалилось.
+/// Итоги в `branch_views` не трогает — они постоянные.
+///
+/// `day` — местный день сервера, поэтому границу считаем так же, через
+/// [localDay], а не `date('now')` (это UTC).
+int purgeOldViewDevices(
+  Database db, {
+  int days = viewDeviceMaxAgeDays,
+  int tzOffsetHours = 0,
+  DateTime? now,
+}) {
+  final edge = localDay(
+    (now ?? DateTime.now()).subtract(Duration(days: days)),
+    tzOffsetHours,
+  );
+  db.execute('delete from branch_view_devices where day < ?', [edge]);
+  return db.updatedRows;
+}
+
+/// Местный день (`ГГГГ-ММ-ДД`) по часам кафе: UTC плюс [tzOffsetHours].
+///
+/// Сервер в контейнере живёт по UTC, а кафе — по своему времени, и «сегодня»
+/// у счётчика просмотров должно совпадать с тем, что считает кафе днём.
+String localDay(DateTime t, int tzOffsetHours) {
+  final d = t.toUtc().add(Duration(hours: tzOffsetHours));
+  final m = d.month.toString().padLeft(2, '0');
+  final day = d.day.toString().padLeft(2, '0');
+  return '${d.year}-$m-$day';
 }
 
 /// [body] целиком или ничего: схема не остаётся наполовину обновлённой.

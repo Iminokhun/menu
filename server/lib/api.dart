@@ -217,11 +217,14 @@ class Api {
     this.billingContact = '',
     this.defaultCountryCode = '',
     this.uploadQuotaBytes = 2 * 1024 * 1024 * 1024,
+    this.tzOffsetHours = 6,
     UploadLimiter? uploadLimiter,
     SlidingWindowLimiter? orderIpLimiter,
     SlidingWindowLimiter? orderBranchLimiter,
     SlidingWindowLimiter? reviewIpLimiter,
     SlidingWindowLimiter? reviewBranchLimiter,
+    SlidingWindowLimiter? viewIpLimiter,
+    SlidingWindowLimiter? viewBranchLimiter,
   }) : _uploads = uploadLimiter ?? UploadLimiter(),
        _orderIp =
            orderIpLimiter ??
@@ -234,7 +237,13 @@ class Api {
            SlidingWindowLimiter(max: 3, window: const Duration(minutes: 10)),
        _reviewBranch =
            reviewBranchLimiter ??
-           SlidingWindowLimiter(max: 30, window: const Duration(minutes: 10));
+           SlidingWindowLimiter(max: 30, window: const Duration(minutes: 10)),
+       _viewIp =
+           viewIpLimiter ??
+           SlidingWindowLimiter(max: 1200, window: const Duration(minutes: 10)),
+       _viewBranch =
+           viewBranchLimiter ??
+           SlidingWindowLimiter(max: 200, window: const Duration(minutes: 10));
 
   /// Сколько заказов подряд принимается с одного адреса
   final SlidingWindowLimiter _orderIp;
@@ -251,14 +260,33 @@ class Api {
   final SlidingWindowLimiter _reviewIp;
   final SlidingWindowLimiter _reviewBranch;
 
+  /// Пределы для отметок о просмотре. Числа куда больше остальных, и это
+  /// нарочно: отметка — не действие гостя, а побочный след открытия меню,
+  /// и терять её из-за чужого наплыва обиднее, чем заказ.
+  ///
+  /// Предел по адресу щедрый именно потому, что в бою адрес один на многих:
+  /// за Cloudflare `clientIp` возвращает адрес её края, а не гостя (почему
+  /// именно последний элемент — в security.dart). Он держит шквал из одного
+  /// места, а правду о числе людей даёт не он, а метка устройства.
+  final SlidingWindowLimiter _viewIp;
+  final SlidingWindowLimiter _viewBranch;
+
   /// Сколько места на диске может занять одно кафе (фото и 3D-модели)
   final int uploadQuotaBytes;
 
   /// Сколько загрузок подряд разрешено одному кафе
   final UploadLimiter _uploads;
 
+  /// На сколько часов местное время кафе впереди UTC (TZ_OFFSET_H).
+  /// Нужно одному счётчику просмотров: день у него должен кончаться тогда,
+  /// когда кафе закрывается, а не в 6 утра по Бишкеку.
+  final int tzOffsetHours;
+
   /// Сегодня — отдельным методом, чтобы все проверки оплаты брали одну дату
   DateTime _today() => DateTime.now();
+
+  /// Сегодняшний местный день (`ГГГГ-ММ-ДД`) — один на запись и на чтение
+  String _day([DateTime? now]) => localDay(now ?? _today(), tzOffsetHours);
 
   AccessInfo _access(String cafeId) {
     final rows = db.select('select plan, paid_until from cafes where id = ?', [
@@ -274,6 +302,9 @@ class Api {
       'Слишком много заказов подряд. Подождите немного';
   static const _tooManyReviews =
       'Слишком много отзывов подряд. Подождите немного';
+
+  /// Гость этого не увидит: отметку о просмотре никто не ждёт
+  static const _tooManyViews = 'Слишком часто';
 
   /// Значение поля запроса как строка; не строка — пусто.
   static String _str(Object? v) => v is String ? v : '';
@@ -297,6 +328,7 @@ class Api {
     r.get('/api/public/cafes', _publicCafes);
     r.post('/api/public/orders', _createOrder);
     r.post('/api/public/reviews', _createReview);
+    r.post('/api/public/view', _recordView);
 
     // ---------- Для поисковиков (seo.dart) ----------
     r.get('/kafe', _seoCatalog);
@@ -342,6 +374,7 @@ class Api {
     r.delete('/api/super/cafes/<id>', _deleteCafe);
     r.post('/api/super/cafes/<id>/users', _createCafeUser);
     r.get('/api/super/cafes/<id>/payments', _listPayments);
+    r.get('/api/super/cafes/<id>/views', _cafeViews);
     r.post('/api/super/cafes/<id>/payments', _addPayment);
     r.post('/api/super/cafes/<id>/upload', _uploadCafeImage);
     r.patch('/api/super/branches/<id>', _updateBranchFeatures);
@@ -850,6 +883,52 @@ class Api {
     // Отзывам номер не нужен: они никуда не пересылаются, а ложатся в
     // админку кафе. Гостю нужен только сам признак — есть ли кнопка
     return _json(m);
+  }
+
+  /// Гость открыл меню филиала. Ответ пустой: приложение не ждёт его и не
+  /// показывает гостю ничего — упало так упало, просмотр просто не
+  /// засчитан (так честнее, чем копить отметки и досылать потом).
+  ///
+  /// `device` — случайная строка, которую приложение придумало себе само и
+  /// держит у себя (lib/view_ping.dart). Она не связана ни с гостем, ни с
+  /// заказом, ни с отзывом, и нужна ровно для одного: не посчитать одного
+  /// человека дважды за день. Поэтому она приходит **телом**, а не в
+  /// адресе: адреса запросов попадают в журнал сервера (logRequests),
+  /// и метке устройства там не место.
+  Future<Response> _recordView(Request req) async {
+    final body = await _body(req);
+    // Предел — до любой работы с базой
+    if (!_viewIp.tryAcquire(clientIp(req))) {
+      throw ApiError(429, _tooManyViews, code: 'too_often');
+    }
+    final slug = _str(body['slug']);
+    final device = _str(body['device']);
+    if (slug.isEmpty ||
+        slug.length > _maxIdLength ||
+        device.isEmpty ||
+        device.length > _maxIdLength) {
+      throw ApiError(400, 'Не указан филиал');
+    }
+    // Те же три условия, что и у _publicBranch: просмотр считается только
+    // там, где гость действительно увидел меню
+    final rows = db.select(
+      '''
+      select b.id, b.cafe_id from branches b join cafes c on c.id = b.cafe_id
+       where b.slug = ? and b.is_active = 1 and c.is_active = 1''',
+      [slug],
+    );
+    if (rows.isEmpty) throw ApiError(404, 'Филиал не найден');
+    final id = rows.first['id'] as String;
+    // Предел по филиалу — только после того, как филиал нашёлся: ключом
+    // обязан быть существующий id (подробнее — в _createOrder)
+    if (!_viewBranch.tryAcquire(id)) {
+      throw ApiError(429, _tooManyViews, code: 'too_often');
+    }
+    if (_access(rows.first['cafe_id'] as String).access == Access.expired) {
+      throw ApiError(403, _unpaidGuest, code: 'unpaid');
+    }
+    countView(db, branchId: id, device: device, day: _day());
+    return Response(204);
   }
 
   /// Каталог на главной сайта: кафе, которые superadmin включил в него,
@@ -2116,6 +2195,22 @@ class Api {
       'select id, cafe_id, slug, name, is_active, orders_enabled, '
       'order_whatsapp, reviews_enabled from branches order by sort_order, name',
     );
+    // Просмотры: один запрос на всю платформу, а не подзапрос на каждое
+    // кафе. Филиалам цифры раздаются по branch_id, кафе — суммой его
+    // филиалов, которая всё равно складывается здесь же
+    final views = <String, (int today, int total)>{};
+    for (final v in db.select(
+      '''
+      select branch_id, sum(people) as total,
+             sum(case when day = ? then people else 0 end) as today
+        from branch_views group by branch_id''',
+      [_day()],
+    )) {
+      views[v['branch_id'] as String] = (
+        (v['today'] as int?) ?? 0,
+        (v['total'] as int?) ?? 0,
+      );
+    }
     return _json(
       cafes.map((c) {
         final m = _withAccess(rowToJson(c));
@@ -2123,13 +2218,74 @@ class Api {
             .where((x) => x['cafe_id'] == c['id'])
             .map(rowToJson)
             .toList();
-        m['branches'] = branches
-            .where((x) => x['cafe_id'] == c['id'])
-            .map(rowToJson)
-            .toList();
+        var today = 0;
+        var total = 0;
+        m['branches'] = branches.where((x) => x['cafe_id'] == c['id']).map((b) {
+          final n = views[b['id'] as String] ?? (0, 0);
+          today += n.$1;
+          total += n.$2;
+          return rowToJson(b)
+            ..['views_today'] = n.$1
+            ..['views_total'] = n.$2;
+        }).toList();
+        m['views_today'] = today;
+        m['views_total'] = total;
         return m;
       }).toList(),
     );
+  }
+
+  /// Просмотры одного кафе: по дням за `days` последних дней и итоги по
+  /// филиалам. Для окна подробностей в /menu-kg/.
+  ///
+  /// Дни отдаются только те, в которые кто-то заходил; пустые дорисовывает
+  /// админка — ряд столбиков всё равно строится от сегодняшнего числа, и
+  /// присылать тридцать нулей незачем.
+  Response _cafeViews(Request req, String cafeId) {
+    _superadmin(req);
+    _cafeById(cafeId);
+    final days = (int.tryParse(req.url.queryParameters['days'] ?? '') ?? 30)
+        .clamp(1, 365);
+    // Граница — местный день, как и day в таблице
+    final since = localDay(
+      _today().subtract(Duration(days: days - 1)),
+      tzOffsetHours,
+    );
+    final byDay = db.select(
+      '''
+      select v.day, sum(v.people) as people, sum(v.opens) as opens
+        from branch_views v join branches b on b.id = v.branch_id
+       where b.cafe_id = ? and v.day >= ?
+       group by v.day order by v.day''',
+      [cafeId, since],
+    );
+    final byBranch = db.select(
+      '''
+      select b.id, b.name,
+             coalesce(sum(v.people), 0) as total,
+             coalesce(sum(case when v.day = ? then v.people else 0 end), 0)
+               as today
+        from branches b left join branch_views v on v.branch_id = b.id
+       where b.cafe_id = ?
+       group by b.id order by b.sort_order, b.name''',
+      [_day(), cafeId],
+    );
+    return _json({
+      'today': _day(),
+      'days': [
+        for (final r in byDay)
+          {'day': r['day'], 'people': r['people'], 'opens': r['opens']},
+      ],
+      'branches': [
+        for (final r in byBranch)
+          {
+            'id': r['id'],
+            'name': r['name'],
+            'views_today': r['today'],
+            'views_total': r['total'],
+          },
+      ],
+    });
   }
 
   Map<String, Object?> _cafeById(String id) {
