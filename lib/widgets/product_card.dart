@@ -356,8 +356,13 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
     );
   }
 
-  /// Кнопки поверх фото: «Смотреть в 3D» — у блюд с 3D-моделью,
-  /// «Живое фото» — у любого блюда с фото.
+  /// Живое фото открывается нажатием по самому фото: гость тычет в
+  /// блюдо, а не ищет кнопку. Кнопки «Живое фото» поэтому нет — вместо
+  /// неё подсказка в углу, что фото живое; нажатие она пропускает
+  /// насквозь, в само фото.
+  ///
+  /// «Смотреть в 3D» остаётся кнопкой: 3D-модель есть у считаных блюд,
+  /// и по фото о ней никак не догадаться.
   Widget _withViewButtons(Widget image) {
     final product = widget.product;
     final has3D = product.modelUrl.isNotEmpty;
@@ -384,28 +389,65 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
 
     return Stack(
       children: [
-        Positioned.fill(child: image),
-        Positioned(
-          left: 8,
-          right: 8,
-          bottom: 14,
-          child: Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 10,
-            runSpacing: 8,
-            children: [
-              if (has3D)
-                button(Icons.view_in_ar, 'Смотреть в 3D',
-                    () => open(Dish3DView(product: product, title: title, config: conf))),
-              if (hasPhoto)
-                button(Icons.motion_photos_on_outlined, 'Живое фото',
-                    () => open(LivePhotoView(product: product, title: title, config: conf))),
-            ],
-          ),
+        Positioned.fill(
+          child: hasPhoto
+              ? GestureDetector(
+                  key: const Key('dish_photo'),
+                  // Прозрачные поля вокруг фото тоже открывают живое фото:
+                  // гость целится в блюдо, а не в прямоугольник картинки
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => open(
+                      LivePhotoView(product: product, title: title, config: conf)),
+                  child: image,
+                )
+              : image,
         ),
+        if (hasPhoto)
+          Positioned(
+            top: 10,
+            right: 10,
+            child: IgnorePointer(child: _livePhotoHint(conf)),
+          ),
+        if (has3D)
+          Positioned(
+            left: 8,
+            right: 8,
+            bottom: 14,
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: button(Icons.view_in_ar, 'Смотреть в 3D',
+                  () => open(Dish3DView(product: product, title: title, config: conf))),
+            ),
+          ),
       ],
     );
   }
+
+  /// Подсказка «нажмите на фото»: без неё гость не узнает, что фото
+  /// оживает. Негромкая — само фото важнее подписи на нём.
+  Widget _livePhotoHint(ThemeConfig conf) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.45),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: conf.accent.withValues(alpha: 0.5)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.motion_photos_on_outlined, size: 15, color: conf.accent),
+            const SizedBox(width: 5),
+            Text(
+              'Живое фото',
+              style: GoogleFonts.manrope(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      );
 
   Widget _buildImageSection() {
     return _withViewButtons(Container(
